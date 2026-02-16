@@ -1,0 +1,9 @@
+{
+  "name": "buddy",
+  "private": true,
+  "scripts": {
+    "dev:server": "cd server && node index.js",
+    "dev:client": "cd client && npm run dev",
+    "install:all": "cd server && npm install && cd ../client && npm install"
+  }
+}
