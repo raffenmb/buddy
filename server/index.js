@@ -13,7 +13,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
-import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory } from "./agents.js";
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
 import { resetSession } from "./session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -77,10 +77,10 @@ app.get("/api/agents/:id", (req, res) => {
 });
 
 app.post("/api/agents", (req, res) => {
-  const { id, name, system_prompt, model, avatar_config, voice_config } = req.body;
+  const { id, name, system_prompt, model, avatar_config, voice_config, identity, user_info } = req.body;
 
-  if (!id || !name || !system_prompt) {
-    return res.status(400).json({ error: "id, name, and system_prompt are required" });
+  if (!id || !name) {
+    return res.status(400).json({ error: "id and name are required" });
   }
 
   if (getAgent(id)) {
@@ -88,8 +88,8 @@ app.post("/api/agents", (req, res) => {
   }
 
   try {
-    createAgent({ id, name, model, system_prompt, avatar_config, voice_config });
-    res.status(201).json(getAgent(id));
+    const agent = createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info });
+    res.status(201).json(agent);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -125,6 +125,43 @@ app.get("/api/agents/:id/memory", (req, res) => {
 app.delete("/api/agents/:id/memory/:key", (req, res) => {
   deleteMemory(req.params.id, req.params.key);
   res.json({ status: "deleted" });
+});
+
+// ─── Agent File Routes ────────────────────────────────────────────────────
+
+app.get("/api/agents/:id/files", (req, res) => {
+  const agent = getAgent(req.params.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  res.json(getAgentFiles(req.params.id));
+});
+
+app.get("/api/agents/:id/files/:filename", (req, res) => {
+  const agent = getAgent(req.params.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  const content = readAgentFile(req.params.id, req.params.filename);
+  if (content === null) return res.status(404).json({ error: "File not found" });
+  res.json({ name: req.params.filename, content });
+});
+
+app.put("/api/agents/:id/files/:filename", (req, res) => {
+  const agent = getAgent(req.params.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  const { content } = req.body;
+  if (content === undefined) return res.status(400).json({ error: "content is required" });
+
+  writeAgentFile(req.params.id, req.params.filename, content);
+  res.json({ status: "saved", name: req.params.filename });
+});
+
+app.delete("/api/agents/:id/files/:filename", (req, res) => {
+  try {
+    deleteAgentFile(req.params.id, req.params.filename);
+    res.json({ status: "deleted" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // ─── Session Routes ───────────────────────────────────────────────────────────
@@ -171,6 +208,7 @@ app.post("/api/prompt", (req, res) => {
             agent: {
               id: agent.id,
               name: agent.name,
+              avatar: agent.avatar,
               avatar_config: agent.avatar_config,
               voice_config: agent.voice_config,
             },

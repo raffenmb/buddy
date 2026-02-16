@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useBuddy } from "../context/BuddyState";
-import buddyIdle from "../assets/buddy-idle.svg";
-import buddyTalking from "../assets/buddy-talking.svg";
+import { AVATAR_PRESETS } from "../assets/avatars/index.js";
 
 export default function Avatar() {
   const { state, dispatch } = useBuddy();
@@ -62,7 +61,9 @@ export default function Avatar() {
     };
   }, [subtitle.visible, subtitle.text, dispatch]);
 
-  const avatarSrc = showTalkFrame ? buddyTalking : buddyIdle;
+  // Look up avatar preset from agent state, fallback to buddy
+  const preset = AVATAR_PRESETS[agent.avatar] || AVATAR_PRESETS.buddy;
+  const avatarSrc = showTalkFrame ? preset.talking : preset.idle;
 
   return (
     <div

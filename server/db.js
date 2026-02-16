@@ -54,6 +54,12 @@ db.exec(`
   );
 `);
 
+// ─── Migrations ──────────────────────────────────────────────────────────────
+
+// Add avatar and enabled_tools columns (idempotent)
+try { db.exec("ALTER TABLE agents ADD COLUMN avatar TEXT DEFAULT 'buddy'"); } catch {}
+try { db.exec("ALTER TABLE agents ADD COLUMN enabled_tools TEXT DEFAULT NULL"); } catch {}
+
 // Seed default session
 db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('default')").run();
 

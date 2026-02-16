@@ -1,11 +1,20 @@
 /**
- * Agent registry — CRUD for agents and per-agent memory, backed by SQLite.
+ * Agent registry — CRUD for agents, per-agent memory, and file-based
+ * identity/user prompts, all backed by SQLite + filesystem.
  * Seeds the default "buddy" agent on import.
  */
 
 import db from "./db.js";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync, rmSync, unlinkSync, statSync } from "fs";
 
-// ─── Default system prompt (moved from claude-client.js) ──────────────────────
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AGENTS_DIR = join(__dirname, "agents");
+
+const CORE_FILES = ["identity.md", "user.md"];
+
+// ─── Default system prompt (written to identity.md for buddy) ────────────────
 
 const BUDDY_SYSTEM_PROMPT = `You are Buddy, a personal AI assistant displayed as a small avatar character on a screen. You talk to the user through subtitles — your text responses appear as subtitle text next to your avatar, one response at a time, like a character in a movie.
 
@@ -45,6 +54,29 @@ Memory:
 - When the user tells you something personal (name, preferences, job, etc.), use remember_fact to save it.
 - Use remembered facts naturally in conversation — don't announce that you're remembering things.`;
 
+// ─── File system setup ───────────────────────────────────────────────────────
+
+function ensureAgentDir(agentId) {
+  const dir = join(AGENTS_DIR, agentId);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+// Create agents/ root and buddy/ directory with default files
+if (!existsSync(AGENTS_DIR)) {
+  mkdirSync(AGENTS_DIR, { recursive: true });
+}
+
+const buddyDir = ensureAgentDir("buddy");
+if (!existsSync(join(buddyDir, "identity.md"))) {
+  writeFileSync(join(buddyDir, "identity.md"), BUDDY_SYSTEM_PROMPT, "utf-8");
+}
+if (!existsSync(join(buddyDir, "user.md"))) {
+  writeFileSync(join(buddyDir, "user.md"), "", "utf-8");
+}
+
 // ─── Seed default agent ───────────────────────────────────────────────────────
 
 const defaultModel = process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929";
@@ -62,31 +94,43 @@ export function getAgent(id) {
 
 export function listAgents() {
   return db.prepare(
-    "SELECT id, name, model, avatar_config, voice_config FROM agents"
+    "SELECT id, name, model, avatar, enabled_tools, avatar_config, voice_config FROM agents"
   ).all();
 }
 
-export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config }) {
+export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info }) {
   const m = model || defaultModel;
+  const sp = system_prompt || "You are a helpful assistant.";
   const av = avatar_config ? JSON.stringify(avatar_config) : "{}";
   const vc = voice_config ? JSON.stringify(voice_config) : "{}";
-  return db.prepare(`
+
+  db.prepare(`
     INSERT INTO agents (id, name, model, system_prompt, avatar_config, voice_config)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, name, m, system_prompt, av, vc);
+  `).run(id, name, m, sp, av, vc);
+
+  // Create folder + core files
+  const dir = ensureAgentDir(id);
+  writeFileSync(join(dir, "identity.md"), identity || sp, "utf-8");
+  writeFileSync(join(dir, "user.md"), user_info || "", "utf-8");
+
+  return getAgent(id);
 }
 
 export function updateAgent(id, fields) {
-  const allowed = ["name", "model", "system_prompt", "avatar_config", "voice_config"];
+  const allowed = ["name", "model", "system_prompt", "avatar_config", "voice_config", "avatar", "enabled_tools"];
   const sets = [];
   const values = [];
 
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       sets.push(`${key} = ?`);
-      const val = (key === "avatar_config" || key === "voice_config")
-        ? JSON.stringify(fields[key])
-        : fields[key];
+      let val = fields[key];
+      if (key === "avatar_config" || key === "voice_config") {
+        val = JSON.stringify(val);
+      } else if (key === "enabled_tools") {
+        val = val === null ? null : JSON.stringify(val);
+      }
       values.push(val);
     }
   }
@@ -103,7 +147,60 @@ export function deleteAgent(id) {
   if (id === "buddy") {
     throw new Error("Cannot delete the default buddy agent");
   }
-  return db.prepare("DELETE FROM agents WHERE id = ?").run(id);
+  db.prepare("DELETE FROM agents WHERE id = ?").run(id);
+
+  // Remove agent folder
+  const dir = join(AGENTS_DIR, id);
+  if (existsSync(dir)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── Agent Files ─────────────────────────────────────────────────────────────
+
+export function getAgentFiles(agentId) {
+  const dir = join(AGENTS_DIR, agentId);
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => {
+      const fp = join(dir, f);
+      return statSync(fp).isFile();
+    })
+    .map((name) => ({
+      name,
+      isCore: CORE_FILES.includes(name),
+    }));
+}
+
+export function readAgentFile(agentId, filename) {
+  const fp = join(AGENTS_DIR, agentId, filename);
+  if (!existsSync(fp)) return null;
+  return readFileSync(fp, "utf-8");
+}
+
+export function writeAgentFile(agentId, filename, content) {
+  ensureAgentDir(agentId);
+  const fp = join(AGENTS_DIR, agentId, filename);
+  writeFileSync(fp, content, "utf-8");
+}
+
+export function deleteAgentFile(agentId, filename) {
+  if (CORE_FILES.includes(filename)) {
+    throw new Error(`Cannot delete core file: ${filename}`);
+  }
+  const fp = join(AGENTS_DIR, agentId, filename);
+  if (existsSync(fp)) {
+    unlinkSync(fp);
+  }
+}
+
+export function getIdentity(agentId) {
+  return readAgentFile(agentId, "identity.md") || "";
+}
+
+export function getUserInfo(agentId) {
+  return readAgentFile(agentId, "user.md") || "";
 }
 
 // ─── Agent Memory ─────────────────────────────────────────────────────────────

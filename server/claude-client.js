@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import yts from "yt-search";
 import tools from "./tools.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
-import { getAgent, getMemories, setMemory } from "./agents.js";
+import { getAgent, getMemories, setMemory, getIdentity, getUserInfo } from "./agents.js";
 
 const anthropic = new Anthropic();
 
@@ -30,10 +30,17 @@ async function executeYouTubeSearch(input) {
 }
 
 /**
- * Build the full system prompt by appending remembered facts to the agent's base prompt.
+ * Build the full system prompt from identity.md + user.md files + memories.
  */
 function buildSystemPrompt(agent, memories) {
-  let prompt = agent.system_prompt;
+  // Read identity from file system instead of DB field
+  let prompt = getIdentity(agent.id) || agent.system_prompt;
+
+  // Append user info from file if non-empty
+  const userInfo = getUserInfo(agent.id);
+  if (userInfo && userInfo.trim()) {
+    prompt += "\n\n## About the user:\n" + userInfo;
+  }
 
   if (memories.length > 0) {
     prompt += "\n\n## What you remember about the user:\n";
@@ -62,22 +69,37 @@ export async function processPrompt(userText, agentId = "buddy") {
   const memories = getMemories(agentId);
   const systemPrompt = buildSystemPrompt(agent, memories);
 
-  // 2. Add user message to session history
+  // 2. Filter tools based on agent's enabled_tools setting
+  let agentTools = tools;
+  if (agent.enabled_tools) {
+    try {
+      const enabledTools = typeof agent.enabled_tools === "string"
+        ? JSON.parse(agent.enabled_tools)
+        : agent.enabled_tools;
+      if (Array.isArray(enabledTools)) {
+        agentTools = tools.filter((t) => enabledTools.includes(t.name));
+      }
+    } catch {
+      // If parsing fails, use all tools
+    }
+  }
+
+  // 3. Add user message to session history
   addUserMessage(userText, agentId);
 
-  // 3. Initial Claude API call
+  // 4. Initial Claude API call
   let response = await anthropic.messages.create({
     model: agent.model,
     system: systemPrompt,
     messages: getMessages(agentId),
-    tools,
+    tools: agentTools,
     max_tokens: 4096,
   });
 
   // Accumulate all tool calls across loop iterations
   const allToolCalls = [];
 
-  // 4. Tool-use loop: keep going while Claude wants to call tools
+  // 5. Tool-use loop: keep going while Claude wants to call tools
   while (response.stop_reason === "tool_use") {
     // Extract tool_use blocks from the response
     const toolUseBlocks = response.content.filter(
@@ -127,15 +149,15 @@ export async function processPrompt(userText, agentId = "buddy") {
       model: agent.model,
       system: systemPrompt,
       messages: getMessages(agentId),
-      tools,
+      tools: agentTools,
       max_tokens: 4096,
     });
   }
 
-  // 5. stop_reason === "end_turn" — add the final response to session
+  // 6. stop_reason === "end_turn" — add the final response to session
   addAssistantResponse(response, agentId);
 
-  // 6. Extract text content from the final response
+  // 7. Extract text content from the final response
   const finalTextContent = response.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)

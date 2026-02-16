@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Antenna -->
+  <line x1="60" y1="8" x2="60" y2="22" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" />
+  <circle cx="60" cy="6" r="4" fill="#f43f5e" />
+  <!-- Head -->
+  <rect x="22" y="22" width="76" height="60" rx="10" fill="#475569" />
+  <rect x="26" y="26" width="68" height="52" rx="8" fill="#64748b" />
+  <!-- Left eye -->
+  <rect x="36" y="40" width="16" height="14" rx="3" fill="#0f172a" />
+  <circle cx="44" cy="47" r="4" fill="#22d3ee" />
+  <circle cx="46" cy="45" r="1.5" fill="white" />
+  <!-- Right eye -->
+  <rect x="68" y="40" width="16" height="14" rx="3" fill="#0f172a" />
+  <circle cx="76" cy="47" r="4" fill="#22d3ee" />
+  <circle cx="78" cy="45" r="1.5" fill="white" />
+  <!-- Mouth open -->
+  <rect x="42" y="62" width="36" height="12" rx="4" fill="#0f172a" />
+  <rect x="46" y="64" width="28" height="4" rx="2" fill="#22d3ee" opacity="0.6" />
+  <!-- Ears / side bolts -->
+  <circle cx="18" cy="50" r="6" fill="#94a3b8" />
+  <circle cx="102" cy="50" r="6" fill="#94a3b8" />
+  <!-- Body hint -->
+  <rect x="38" y="84" width="44" height="28" rx="6" fill="#475569" />
+  <rect x="50" y="90" width="20" height="8" rx="3" fill="#22d3ee" opacity="0.5" />
+</svg>
