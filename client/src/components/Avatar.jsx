@@ -5,7 +5,7 @@ import buddyTalking from "../assets/buddy-talking.svg";
 
 export default function Avatar() {
   const { state, dispatch } = useBuddy();
-  const { avatar, subtitle, input } = state;
+  const { avatar, subtitle, input, agent } = state;
   const [showTalkFrame, setShowTalkFrame] = useState(false);
   const talkTimerRef = useRef(null);
   const mouthIntervalRef = useRef(null);
@@ -70,13 +70,14 @@ export default function Avatar() {
       style={{ bottom: "80px", left: "16px" }}
     >
       {/* Avatar image with idle bob animation */}
-      <div className="avatar-bob flex-shrink-0">
+      <div className="avatar-bob flex-shrink-0 flex flex-col items-center">
         <img
           src={avatarSrc}
-          alt="Buddy"
+          alt={agent.name}
           style={{ width: "120px", height: "120px" }}
           draggable={false}
         />
+        <span className="text-white/70 text-xs mt-1">{agent.name}</span>
       </div>
 
       {/* Subtitle or thinking indicator */}

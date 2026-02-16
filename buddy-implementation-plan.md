@@ -12,11 +12,11 @@ Buddy runs on a dedicated home server and connects to any device — desktop bro
 
 **Layer 1 — MVP (DONE):** Static avatar + subtitle responses + dynamic canvas on web. Text input, browser TTS, YouTube search. Proves the paradigm works.
 
-**Layer 2 — Dedicated Server:** Persistent sessions (survive restarts), auth token, always-on process management, Tailscale for remote access. Buddy becomes a service, not a dev project.
+**Layer 2 — Dedicated Server:** Persistent sessions (survive restarts), auth token, always-on process management, Tailscale for remote access, **multi-agent system** (agent registry, switching via dropdown, per-agent memory/identity/model). Buddy becomes a service, not a dev project.
 
 **Layer 3 — Mobile App:** React Native app for phone/tablet. Same Buddy, same canvas, native feel. Connects to the same server over Tailscale.
 
-**Layer 4 — Enhanced Experience:** Premium TTS, voice input, animated avatar, more server-side tools (web search, weather, calendar, smart home). Buddy gets smarter and more capable.
+**Layer 4 — Enhanced Experience:** Premium TTS with per-agent voices, voice input, animated per-agent avatars, voice-activated agent switching, more server-side tools (web search, weather, calendar, smart home). Buddy gets smarter and more capable.
 
 **Layer 5 — Multi-Device Intelligence:** Device registration, smart content routing (video to TV, quick answers to phone), cross-device session continuity, offline queue.
 
@@ -169,10 +169,12 @@ All messages are JSON. This protocol is shared across all clients (web, mobile).
 buddy/
 ├── server/
 │   ├── index.js                # Express + WebSocket entry point
-│   ├── claude-client.js        # Claude API + tool use loop
-│   ├── tools.js                # Canvas + server-side tool definitions
+│   ├── claude-client.js        # Claude API + tool use loop (per-agent model + system prompt)
+│   ├── tools.js                # Canvas + server-side tool definitions (incl. remember_fact)
 │   ├── response-splitter.js    # Separates subtitle text from canvas commands
-│   ├── session.js              # Session management (in-memory → SQLite)
+│   ├── session.js              # Session management (in-memory → SQLite, per-agent history)
+│   ├── agents.js               # Agent CRUD + memory operations (Layer 2)
+│   ├── db.js                   # SQLite connection + schema init (Layer 2)
 │   └── .env                    # ANTHROPIC_API_KEY, AUTH_TOKEN
 ├── client/
 │   ├── src/
@@ -183,7 +185,8 @@ buddy/
 │   │   ├── components/
 │   │   │   ├── Avatar.jsx      # Avatar image + mouth toggle + subtitle + TTS
 │   │   │   ├── Canvas.jsx      # Full-screen background canvas
-│   │   │   ├── InputBar.jsx    # Text input
+│   │   │   ├── InputBar.jsx    # Text input (sends agent_id with prompts)
+│   │   │   ├── AgentSwitcher.jsx  # Dropdown to switch between agents (Layer 2)
 │   │   │   └── canvas-elements/
 │   │   │       ├── Card.jsx
 │   │   │       ├── Chart.jsx
@@ -253,6 +256,25 @@ Replace in-memory session with SQLite via `better-sqlite3`.
 - `server/session.js` — Rewrite to use SQLite. Store messages as JSON blobs.
 - Schema:
   ```sql
+  CREATE TABLE agents (
+    id TEXT PRIMARY KEY,             -- e.g. 'buddy', 'chef', 'fitness'
+    name TEXT NOT NULL,              -- Display name: 'Buddy', 'Chef Marco'
+    model TEXT NOT NULL DEFAULT 'claude-sonnet-4-5-20250929',
+    system_prompt TEXT NOT NULL,     -- Personality + instructions
+    avatar_config TEXT,              -- JSON: { image, idleFrames, talkFrames } (Layer 4)
+    voice_config TEXT,               -- JSON: { provider, voiceId, rate, pitch } (Layer 4)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE agent_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT REFERENCES agents(id),
+    key TEXT NOT NULL,               -- e.g. 'user_name', 'favorite_cuisine'
+    value TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(agent_id, key)
+  );
   CREATE TABLE sessions (
     id TEXT PRIMARY KEY DEFAULT 'default',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -261,8 +283,9 @@ Replace in-memory session with SQLite via `better-sqlite3`.
   CREATE TABLE messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id),
-    role TEXT NOT NULL,          -- 'user', 'assistant'
-    content TEXT NOT NULL,       -- JSON string of content blocks
+    agent_id TEXT REFERENCES agents(id) DEFAULT 'buddy',
+    role TEXT NOT NULL,              -- 'user', 'assistant'
+    content TEXT NOT NULL,           -- JSON string of content blocks
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   ```
@@ -333,12 +356,99 @@ Build the Vite app and serve it from Express so you don't need to run two proces
 - Add build script: `cd client && npm run build`
 - pm2 manages just the one Node process which serves both API and static files.
 
+### 2.6 Agent Registry
+
+Multiple agents, each with their own personality, model, and conversation history. Agents are stored in the `agents` table (see schema in 2.1).
+
+**Changes:**
+- `server/agents.js` — New module. CRUD operations for agents: `getAgent(id)`, `listAgents()`, `createAgent({id, name, model, system_prompt})`, `updateAgent(id, fields)`, `deleteAgent(id)`.
+- `server/index.js` — New API endpoints:
+  - `GET /api/agents` — List all agents (id, name, model).
+  - `POST /api/agents` — Create a new agent.
+  - `PUT /api/agents/:id` — Update agent fields (model, system_prompt, name, etc.).
+  - `DELETE /api/agents/:id` — Delete agent and its messages/memory.
+- `server/claude-client.js` — Accept an `agent` object. Use `agent.model` when calling the Claude API. Prepend `agent.system_prompt` as the system message. Inject agent memories into the system prompt (e.g. "You know the following about the user: ...").
+- `server/session.js` — `getMessages()` filters by `agent_id`. Each agent has its own conversation history.
+- **Seed data** — On first run, create a default `buddy` agent with the current system prompt and model from `.env`.
+
+**Agent definition example:**
+```javascript
+{
+  id: 'chef',
+  name: 'Chef Marco',
+  model: 'claude-sonnet-4-5-20250929',
+  system_prompt: `You are Chef Marco, a warm Italian chef who helps with cooking...
+    Keep subtitle responses to 1-3 sentences. Use the canvas for recipes,
+    ingredient lists, and cooking videos. You love Italian and French cuisine
+    but know all styles.`
+}
+```
+
+### 2.7 Agent Switching
+
+The user can switch between agents via a frontend dropdown. The server loads the selected agent's personality, model, and history.
+
+**Server changes:**
+- `server/index.js` — `POST /api/prompt` accepts an optional `agent_id` field. Defaults to `'buddy'`.
+- WebSocket protocol addition:
+  ```javascript
+  // Server → Client (when agent switches)
+  { type: "agent_switch", agent: { id, name, avatar_config, voice_config } }
+  ```
+- When switching agents, the server clears the current canvas (sends `canvas_set_mode: clear`) so the new agent starts fresh.
+
+**Client changes:**
+- `client/src/components/AgentSwitcher.jsx` — New component. A dropdown in the top bar or near the input bar showing available agents. Fetches from `GET /api/agents` on mount. Selecting an agent sends the ID with the next prompt and triggers a `agent_switch` message.
+- `client/src/context/BuddyState.jsx` — Add `currentAgent` to state. New action type `SET_AGENT`. Agent info (name, id) stored in state so avatar and UI can adapt.
+- `client/src/components/InputBar.jsx` — Include `agent_id` from state when posting to `/api/prompt`.
+- `client/src/components/Avatar.jsx` — Display the current agent's name near the avatar.
+
+**Future (Layer 4+):** Natural language agent switching — if you say "let me talk to Chef Marco," the current agent can detect the intent and trigger a handoff via a `switch_agent` tool call. The server would process the switch and route the conversation to the new agent.
+
+### 2.8 Agent Memory
+
+Each agent accumulates knowledge about the user over time. Memories are key-value pairs stored in `agent_memory` and injected into the agent's system prompt on every turn.
+
+**Changes:**
+- `server/agents.js` — Add `getMemories(agentId)`, `setMemory(agentId, key, value)`, `deleteMemory(agentId, key)`.
+- `server/tools.js` — New server-side tool `remember_fact`:
+  ```javascript
+  {
+    name: 'remember_fact',
+    description: 'Store a fact about the user for future conversations. Use this when the user shares a preference, name, or important detail.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Short label, e.g. "favorite_color", "user_name"' },
+        value: { type: 'string', description: 'The fact to remember' }
+      },
+      required: ['key', 'value']
+    }
+  }
+  ```
+- `server/claude-client.js` — Before each API call, fetch the agent's memories and append them to the system prompt:
+  ```
+  ## What you remember about the user:
+  - user_name: Matt
+  - favorite_cuisine: Italian
+  - dietary_restrictions: none
+  ```
+- Each agent only sees its own memories, but some facts (like `user_name`) could optionally be shared across agents (future enhancement).
+
+**API endpoints:**
+- `GET /api/agents/:id/memory` — View an agent's memories (useful for debugging/admin).
+- `DELETE /api/agents/:id/memory/:key` — Delete a specific memory.
+
 ### Layer 2 Verification
 
 - Restart server — conversation history preserved.
 - Open browser from a different device on Tailscale — connects and works.
 - Kill server process — pm2 restarts it automatically.
 - Send a prompt without auth token — rejected.
+- Create a second agent — appears in dropdown, has its own personality and history.
+- Switch agents via dropdown — avatar name changes, canvas clears, new agent responds in character.
+- Tell Agent A your name — Agent A remembers it. Agent B does not (separate memory).
+- Change an agent's model via API — next response uses the new model.
 
 ---
 
@@ -395,15 +505,16 @@ The mobile app reuses the same patterns, not the same code (React Native compone
 
 ## Layer 4 — Enhanced Experience
 
-### 4.1 Premium TTS
+### 4.1 Premium TTS (Per-Agent Voices)
 
-Replace browser Speech API with ElevenLabs or OpenAI TTS for natural-sounding voice.
+Replace browser Speech API with ElevenLabs or OpenAI TTS for natural-sounding voice. Each agent can have its own voice.
 
 **Approach:**
 - Server generates audio after getting subtitle text.
 - Sends audio as a binary WebSocket message or a URL to a cached audio file.
 - Client plays the audio and syncs mouth animation to audio duration.
 - Subtitles remain as visual fallback and accessibility.
+- **Per-agent voices** — Each agent's `voice_config` (from the `agents` table, set up in 2.6) specifies which TTS provider, voice ID, rate, and pitch to use. When switching agents, the voice changes automatically. Agents without a custom voice config fall back to a default.
 
 ### 4.2 Voice Input
 
@@ -414,13 +525,22 @@ Add a mic button for speech-to-text.
 - Mobile: `expo-av` recording → same server flow.
 - Push-to-talk or voice activity detection.
 
-### 4.3 Animated Avatar
+### 4.3 Animated Avatar (Per-Agent Avatars)
 
-Replace two-frame toggle with richer animations.
+Replace two-frame toggle with richer animations. Each agent gets its own visual identity.
 
 - Sprite sheet or Lottie animations: idle, talking, thinking, happy, concerned, surprised.
 - Add avatar expression tool so Claude can set mood: `{ expression: "thinking" }`.
-- Different avatar skins/characters (future customization).
+- **Per-agent avatars** — Each agent's `avatar_config` (from the `agents` table, set up in 2.6) defines its sprite sheet, idle/talk frames, and available expressions. Chef Marco might be a cartoon chef, a fitness agent might be a sporty character. When switching agents, the avatar swaps with a transition animation.
+- **Agent transition** — Brief crossfade or slide animation when switching between agents so it feels intentional, not jarring.
+
+### 4.5 Voice-Activated Agent Switching
+
+Natural language agent handoff as an upgrade to the dropdown switcher from 2.7.
+
+- Add a `switch_agent` tool to `tools.js` so the current agent can detect when the user wants a different agent and trigger the switch programmatically.
+- System prompt instruction: "If the user asks to talk to another agent or requests a domain you don't specialize in, use the switch_agent tool."
+- The switch happens seamlessly — canvas clears, new agent appears, and the new agent greets the user or picks up context.
 
 ### 4.4 More Server-Side Tools
 
@@ -516,6 +636,7 @@ When a device loses connection:
 
 - Node.js 18+
 - Anthropic API key
+- SSH access to the dedicated server (for Layer 2+ deployment and remote development)
 
 ### Environment
 

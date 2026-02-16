@@ -2,6 +2,27 @@ import { useEffect, useRef } from "react";
 import { useBuddy } from "../context/BuddyState";
 import { routeCommand } from "../lib/commandRouter";
 
+const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
+
+function getWsUrl() {
+  // Explicit env override
+  if (import.meta.env.VITE_WS_URL) {
+    const base = import.meta.env.VITE_WS_URL;
+    return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
+  }
+
+  // In dev mode (Vite dev server), connect directly to the backend
+  if (import.meta.env.DEV) {
+    const base = "ws://localhost:3001";
+    return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
+  }
+
+  // Production: derive from current page location
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const base = `${proto}//${window.location.host}`;
+  return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
+}
+
 export default function useWebSocket() {
   const { dispatch } = useBuddy();
   const wsRef = useRef(null);
@@ -10,7 +31,7 @@ export default function useWebSocket() {
 
   useEffect(() => {
     function connect() {
-      const ws = new WebSocket("ws://localhost:3001");
+      const ws = new WebSocket(getWsUrl());
       wsRef.current = ws;
 
       ws.addEventListener("open", () => {
@@ -40,6 +61,9 @@ export default function useWebSocket() {
               break;
             case "processing":
               dispatch({ type: "SET_PROCESSING", payload: data.status });
+              break;
+            case "agent_switch":
+              dispatch({ type: "SET_AGENT", payload: data.agent });
               break;
             default:
               break;

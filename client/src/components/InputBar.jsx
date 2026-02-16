@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useBuddy } from "../context/BuddyState";
 
+const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
+
 export default function InputBar() {
   const { state, dispatch } = useBuddy();
-  const { input } = state;
+  const { input, agent } = state;
   const [text, setText] = useState("");
 
   async function handleSubmit() {
@@ -15,10 +17,13 @@ export default function InputBar() {
     setText("");
 
     try {
+      const headers = { "Content-Type": "application/json" };
+      if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+
       await fetch("/api/prompt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed })
+        headers,
+        body: JSON.stringify({ prompt: trimmed, agent_id: agent.id })
       });
     } catch (err) {
       console.error("Failed to send prompt:", err);
@@ -40,7 +45,7 @@ export default function InputBar() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Type something to Buddy..."
+        placeholder={`Type something to ${agent.name}...`}
         disabled={input.isProcessing}
         className="w-full bg-transparent text-white px-6 py-4 outline-none placeholder-gray-500 disabled:opacity-50"
       />

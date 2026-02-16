@@ -381,6 +381,25 @@ const tools = [
       required: ["query"],
     },
   },
+  {
+    name: "remember_fact",
+    description:
+      "Remember a fact about the user for future conversations. Use this when the user shares personal information like their name, preferences, job, interests, or anything worth recalling later. Facts persist across sessions.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "A short, descriptive key for the fact (e.g. 'name', 'favorite_color', 'job').",
+        },
+        value: {
+          type: "string",
+          description: "The fact to remember (e.g. 'Matt', 'blue', 'software engineer').",
+        },
+      },
+      required: ["key", "value"],
+    },
+  },
 ];
 
 export default tools;

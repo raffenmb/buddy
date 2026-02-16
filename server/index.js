@@ -1,7 +1,7 @@
 /**
  * Buddy server — Express + WebSocket entry point.
- * Handles HTTP API for prompt submission and WebSocket for real-time
- * canvas commands and subtitle broadcasts.
+ * Handles HTTP API for prompt submission, agent CRUD, session management,
+ * authentication, and WebSocket for real-time canvas/subtitle broadcasts.
  */
 
 import "dotenv/config";
@@ -9,20 +9,47 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory } from "./agents.js";
+import { resetSession } from "./session.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
+const AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
-// Middleware
+// ─── Middleware ────────────────────────────────────────────────────────────────
+
 app.use(
-  cors({
-    origin: "http://localhost:5173",
-    credentials: true,
-  })
+  cors(
+    AUTH_TOKEN
+      ? { origin: true, credentials: true }
+      : { origin: "http://localhost:5173", credentials: true }
+  )
 );
 app.use(express.json());
+
+// Auth middleware — skip if AUTH_TOKEN not set (dev mode)
+function authMiddleware(req, res, next) {
+  if (!AUTH_TOKEN) return next();
+
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: "Authorization header required" });
+
+  const token = header.replace(/^Bearer\s+/i, "");
+  if (token !== AUTH_TOKEN) return res.status(403).json({ error: "Invalid token" });
+
+  next();
+}
+
+app.use("/api", authMiddleware);
+
+// ─── Track current agent per-connection (module level) ────────────────────────
+
+let currentAgentId = "buddy";
 
 /**
  * Broadcast a JSON message to all connected WebSocket clients.
@@ -32,21 +59,87 @@ function broadcast(data) {
   const message = JSON.stringify(data);
   wss.clients.forEach((client) => {
     if (client.readyState === 1) {
-      // WebSocket.OPEN
       client.send(message);
     }
   });
 }
 
-// ─── HTTP Routes ───────────────────────────────────────────────────────────────
+// ─── Agent Routes ─────────────────────────────────────────────────────────────
 
-/**
- * POST /api/prompt
- * Accepts { prompt } in the body. Returns immediately with { status: "ok" },
- * then processes the prompt asynchronously and broadcasts results via WebSocket.
- */
+app.get("/api/agents", (req, res) => {
+  res.json(listAgents());
+});
+
+app.get("/api/agents/:id", (req, res) => {
+  const agent = getAgent(req.params.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  res.json(agent);
+});
+
+app.post("/api/agents", (req, res) => {
+  const { id, name, system_prompt, model, avatar_config, voice_config } = req.body;
+
+  if (!id || !name || !system_prompt) {
+    return res.status(400).json({ error: "id, name, and system_prompt are required" });
+  }
+
+  if (getAgent(id)) {
+    return res.status(409).json({ error: "Agent with this id already exists" });
+  }
+
+  try {
+    createAgent({ id, name, model, system_prompt, avatar_config, voice_config });
+    res.status(201).json(getAgent(id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/agents/:id", (req, res) => {
+  const agent = getAgent(req.params.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  try {
+    updateAgent(req.params.id, req.body);
+    res.json(getAgent(req.params.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/agents/:id", (req, res) => {
+  try {
+    deleteAgent(req.params.id);
+    res.json({ status: "deleted" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── Memory Routes ────────────────────────────────────────────────────────────
+
+app.get("/api/agents/:id/memory", (req, res) => {
+  res.json(getMemories(req.params.id));
+});
+
+app.delete("/api/agents/:id/memory/:key", (req, res) => {
+  deleteMemory(req.params.id, req.params.key);
+  res.json({ status: "deleted" });
+});
+
+// ─── Session Routes ───────────────────────────────────────────────────────────
+
+app.post("/api/session/reset", (req, res) => {
+  const { agent_id } = req.body || {};
+  resetSession(agent_id || null);
+  res.json({ status: "reset" });
+});
+
+// ─── Prompt Route ─────────────────────────────────────────────────────────────
+
 app.post("/api/prompt", (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, agent_id } = req.body;
+  const agentId = agent_id || "buddy";
 
   if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
     return res.status(400).json({ error: "prompt is required" });
@@ -61,8 +154,34 @@ app.post("/api/prompt", (req, res) => {
       // Signal that Buddy is thinking
       broadcast({ type: "processing", status: true });
 
+      // Handle agent switching
+      if (agentId !== currentAgentId) {
+        const agent = getAgent(agentId);
+        if (agent) {
+          // Clear the canvas when switching agents
+          broadcast({
+            type: "canvas_command",
+            command: "canvas_set_mode",
+            params: { mode: "clear" },
+          });
+
+          // Notify clients of agent switch
+          broadcast({
+            type: "agent_switch",
+            agent: {
+              id: agent.id,
+              name: agent.name,
+              avatar_config: agent.avatar_config,
+              voice_config: agent.voice_config,
+            },
+          });
+
+          currentAgentId = agentId;
+        }
+      }
+
       // Run through Claude with tool-use loop
-      const result = await processPrompt(prompt.trim());
+      const result = await processPrompt(prompt.trim(), agentId);
 
       // Split canvas commands and subtitle, broadcast in order
       splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
@@ -79,13 +198,33 @@ app.post("/api/prompt", (req, res) => {
   })();
 });
 
-// ─── HTTP + WebSocket Server ───────────────────────────────────────────────────
+// ─── Static file serving (production) ─────────────────────────────────────────
+
+if (process.env.NODE_ENV === "production") {
+  const clientDist = join(__dirname, "..", "client", "dist");
+  app.use(express.static(clientDist));
+  app.get("*", (req, res) => {
+    res.sendFile(join(clientDist, "index.html"));
+  });
+}
+
+// ─── HTTP + WebSocket Server ──────────────────────────────────────────────────
 
 const server = createServer(app);
 
 const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  // WebSocket auth — check token query param
+  if (AUTH_TOKEN) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get("token");
+    if (token !== AUTH_TOKEN) {
+      ws.close(4001, "Unauthorized");
+      return;
+    }
+  }
+
   console.log("WebSocket client connected");
 
   ws.on("close", () => {
@@ -97,7 +236,7 @@ wss.on("connection", (ws) => {
   });
 });
 
-// ─── Start ─────────────────────────────────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
   console.log(`Buddy server running on http://localhost:${PORT}`);

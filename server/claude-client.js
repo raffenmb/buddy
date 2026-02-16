@@ -6,7 +6,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import yts from "yt-search";
 import tools from "./tools.js";
-import session from "./session.js";
+import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
+import { getAgent, getMemories, setMemory } from "./agents.js";
 
 const anthropic = new Anthropic();
 
@@ -28,56 +29,47 @@ async function executeYouTubeSearch(input) {
   }
 }
 
-const SYSTEM_PROMPT = `You are Buddy, a personal AI assistant displayed as a small avatar character on a screen. You talk to the user through subtitles — your text responses appear as subtitle text next to your avatar, one response at a time, like a character in a movie.
+/**
+ * Build the full system prompt by appending remembered facts to the agent's base prompt.
+ */
+function buildSystemPrompt(agent, memories) {
+  let prompt = agent.system_prompt;
 
-Core behavior:
-- Talk like a real person. Short, natural sentences. You're having a conversation, not writing an essay.
-- Keep your spoken responses (text) concise — ideally 1-3 sentences. The user reads these as subtitles, so brevity matters.
-- If you have detailed information to share, say a short summary as your subtitle and put the details on the canvas using your canvas tools.
-- Example: Don't say "Here are five recipes: 1. Pasta with... 2. Chicken..." as subtitle text. Instead, say "I found some great options — take a look" and use canvas_add_card for each recipe.
-- Never narrate your tool usage. Don't say "I'm putting a chart on the canvas." Say "Check this out" or "Here's what that looks like" while calling the tool.
-- Use canvas_set_mode before adding content to set the right display mode.
-- Give every canvas element a unique, descriptive ID.
-- Clear old canvas content when the topic changes.
-- When the user asks a simple question with a short answer, just say it — no canvas needed.
-- When the user asks something complex, use the canvas for the bulk of the content and keep your subtitle as a brief spoken companion to what's on screen.
+  if (memories.length > 0) {
+    prompt += "\n\n## What you remember about the user:\n";
+    for (const mem of memories) {
+      prompt += `- ${mem.key}: ${mem.value}\n`;
+    }
+  }
 
-Personality:
-- Warm, friendly, slightly casual. Think helpful friend, not corporate assistant.
-- You can be playful and have personality. React to what the user says.
-- You're a presence in their space. Be natural.
-
-Canvas guidelines:
-- 'ambient' mode: use when there's nothing to show, the canvas is just a calm background
-- 'content' mode: use when displaying cards, charts, tables
-- 'media' mode: use when showing a video or large image
-- 'clear': use to wipe the canvas back to ambient when changing topics
-
-Video guidelines:
-- You can search YouTube using the search_youtube tool. It returns real, current video URLs.
-- When a user asks "how to" do something, or wants a tutorial/video, use search_youtube first to find a relevant video, then use canvas_play_media with the URL from the search results.
-- NEVER guess or make up YouTube URLs. ALWAYS use search_youtube to get real URLs first.
-- Pick the most relevant result from the search and embed it with canvas_play_media (media_type "video").
-- Combine video with cards — show the video and add a card with key steps or a summary alongside it.
-- Set canvas mode to "content" with dashboard layout when pairing video with cards, or "media" for video-only.`;
+  return prompt;
+}
 
 /**
  * Process a user prompt through the Claude API with tool-use loop.
  *
  * @param {string} userText - The user's input text.
+ * @param {string} agentId - The agent to use for this prompt.
  * @returns {Promise<{allToolCalls: Array, finalTextContent: string}>}
  */
-export async function processPrompt(userText) {
-  // 1. Add user message to session history
-  session.addUserMessage(userText);
+export async function processPrompt(userText, agentId = "buddy") {
+  // 1. Load agent config and memories
+  const agent = getAgent(agentId);
+  if (!agent) {
+    throw new Error(`Agent '${agentId}' not found`);
+  }
 
-  const model = process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929";
+  const memories = getMemories(agentId);
+  const systemPrompt = buildSystemPrompt(agent, memories);
 
-  // 2. Initial Claude API call
+  // 2. Add user message to session history
+  addUserMessage(userText, agentId);
+
+  // 3. Initial Claude API call
   let response = await anthropic.messages.create({
-    model,
-    system: SYSTEM_PROMPT,
-    messages: session.getMessages(),
+    model: agent.model,
+    system: systemPrompt,
+    messages: getMessages(agentId),
     tools,
     max_tokens: 4096,
   });
@@ -85,7 +77,7 @@ export async function processPrompt(userText) {
   // Accumulate all tool calls across loop iterations
   const allToolCalls = [];
 
-  // 3. Tool-use loop: keep going while Claude wants to call tools
+  // 4. Tool-use loop: keep going while Claude wants to call tools
   while (response.stop_reason === "tool_use") {
     // Extract tool_use blocks from the response
     const toolUseBlocks = response.content.filter(
@@ -110,6 +102,14 @@ export async function processPrompt(userText) {
             content: JSON.stringify(await executeYouTubeSearch(toolUse.input)),
           };
         }
+        if (toolUse.name === "remember_fact") {
+          setMemory(agentId, toolUse.input.key, toolUse.input.value);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify({ status: "remembered" }),
+          };
+        }
         return {
           type: "tool_result",
           tool_use_id: toolUse.id,
@@ -119,23 +119,23 @@ export async function processPrompt(userText) {
     );
 
     // Add assistant response and tool results to session
-    session.addAssistantResponse(response);
-    session.addToolResults(toolResults);
+    addAssistantResponse(response, agentId);
+    addToolResults(toolResults, agentId);
 
     // Call Claude again with the updated conversation
     response = await anthropic.messages.create({
-      model,
-      system: SYSTEM_PROMPT,
-      messages: session.getMessages(),
+      model: agent.model,
+      system: systemPrompt,
+      messages: getMessages(agentId),
       tools,
       max_tokens: 4096,
     });
   }
 
-  // 4. stop_reason === "end_turn" — add the final response to session
-  session.addAssistantResponse(response);
+  // 5. stop_reason === "end_turn" — add the final response to session
+  addAssistantResponse(response, agentId);
 
-  // 5. Extract text content from the final response
+  // 6. Extract text content from the final response
   const finalTextContent = response.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
