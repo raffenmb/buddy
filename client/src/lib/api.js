@@ -1,6 +1,7 @@
 const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
 
-const BASE_URL = import.meta.env.DEV ? "http://localhost:3001" : "";
+// Use relative URLs — Vite proxy handles /api in dev, same-origin in production
+const BASE_URL = "";
 
 export async function apiFetch(path, options = {}) {
   const headers = { ...options.headers };
