@@ -15,6 +15,27 @@ const initialState = {
   agent: { name: "Buddy", id: "default" }
 };
 
+function dedupeId(elements, id) {
+  if (!id) return id;
+  let candidate = id;
+  let counter = 2;
+  while (elements.some((el) => el.id === candidate)) {
+    candidate = `${id}-${counter++}`;
+  }
+  return candidate;
+}
+
+function addElement(state, type, payload) {
+  const id = dedupeId(state.canvas.elements, payload.id);
+  return {
+    ...state,
+    canvas: {
+      ...state.canvas,
+      elements: [...state.canvas.elements, { type, ...payload, id }]
+    }
+  };
+}
+
 function buddyReducer(state, action) {
   switch (action.type) {
     case "SET_SUBTITLE":
@@ -58,13 +79,7 @@ function buddyReducer(state, action) {
     }
 
     case "CANVAS_ADD_CARD":
-      return {
-        ...state,
-        canvas: {
-          ...state.canvas,
-          elements: [...state.canvas.elements, { type: "card", ...action.payload }]
-        }
-      };
+      return addElement(state, "card", action.payload);
 
     case "CANVAS_UPDATE_CARD":
       return {
@@ -87,40 +102,16 @@ function buddyReducer(state, action) {
       };
 
     case "CANVAS_SHOW_TEXT":
-      return {
-        ...state,
-        canvas: {
-          ...state.canvas,
-          elements: [...state.canvas.elements, { type: "text", ...action.payload }]
-        }
-      };
+      return addElement(state, "text", action.payload);
 
     case "CANVAS_SHOW_CHART":
-      return {
-        ...state,
-        canvas: {
-          ...state.canvas,
-          elements: [...state.canvas.elements, { type: "chart", ...action.payload }]
-        }
-      };
+      return addElement(state, "chart", action.payload);
 
     case "CANVAS_SHOW_TABLE":
-      return {
-        ...state,
-        canvas: {
-          ...state.canvas,
-          elements: [...state.canvas.elements, { type: "table", ...action.payload }]
-        }
-      };
+      return addElement(state, "table", action.payload);
 
     case "CANVAS_PLAY_MEDIA":
-      return {
-        ...state,
-        canvas: {
-          ...state.canvas,
-          elements: [...state.canvas.elements, { type: "media", ...action.payload }]
-        }
-      };
+      return addElement(state, "media", action.payload);
 
     case "CANVAS_SHOW_NOTIFICATION":
       return {

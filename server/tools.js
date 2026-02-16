@@ -258,7 +258,7 @@ const tools = [
   {
     name: "canvas_play_media",
     description:
-      "Display media (video, image, or GIF) on the canvas. Provide a URL to the media resource.",
+      "Display media on the canvas. Supports YouTube URLs (youtube.com, youtu.be, shorts), direct video files, images, and GIFs. YouTube videos are embedded as playable players. Use this for how-to videos, tutorials, or any visual media that helps explain a topic.",
     input_schema: {
       type: "object",
       properties: {

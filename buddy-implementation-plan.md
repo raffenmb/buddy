@@ -890,6 +890,27 @@ Not part of MVP. Documented so the builder makes compatible decisions.
 - Agent roster accessible from frontend (show a subtle agent switcher if desired).
 - Rolling memory spans per-agent sessions (each agent has its own session history).
 
+#### Channel Adapter Pattern — Response Formatting
+
+The core problem: Buddy needs two-stream output (subtitle + canvas) but OpenClaw agents return normal single-stream responses. Agents shouldn't need to know about Buddy's UI format.
+
+**Solution: Prompt decorator.** Buddy's channel adapter appends a short formatting instruction (~20-30 tokens) to every prompt before it reaches the agent. This tells the agent how to structure its response for Buddy's display, without the agent author needing to configure anything.
+
+The appended instruction looks something like:
+
+```
+Format your response for a subtitle + canvas UI. Wrap your short spoken response (1-2 sentences) in <subtitle> tags. If you have detailed content (lists, data, code, explanations), wrap it in <canvas> tags with a type attribute: <canvas type="card" title="...">, <canvas type="table">, <canvas type="chart">, <canvas type="code">, or <canvas type="text">. If the answer is simple, just use <subtitle> with no canvas.
+```
+
+**Implementation:**
+1. `server/openclaw-adapter.js` — Replaces `claude-client.js` when running in OpenClaw mode. Sends prompts to Gateway instead of Claude directly. Appends the formatting instruction to each user message.
+2. `server/response-parser.js` — Parses `<subtitle>` and `<canvas>` tags from the raw agent response. Converts canvas tags into the same command format the existing `response-splitter.js` broadcasts (so the frontend doesn't change at all).
+3. The adapter handles the mismatch — agents stay normal, Buddy's frontend stays normal, the adapter translates between them.
+
+**Why this approach over a post-processing LLM call:** Zero extra latency, zero extra cost. The agent is already an LLM — we're just telling it about its output medium, the same way any channel adapter might say "respond in JSON" or "keep it under 280 characters." Every chat interface injects system prompts the user doesn't see; this is no different.
+
+**Fallback:** If an agent's response has no tags (older agent, or agent ignores the instruction), treat the first 1-2 sentences as subtitle and render the rest as a text block on canvas. Graceful degradation.
+
 ### Future Canvas Elements
 
 - `canvas_show_code` — syntax-highlighted code

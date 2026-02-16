@@ -13,6 +13,8 @@
  * @param {Function} broadcast - Function that sends a JSON message to all WS clients.
  */
 export function splitAndBroadcast(allToolCalls, finalTextContent, broadcast) {
+  console.log(`[splitter] ${allToolCalls.length} tool calls:`, allToolCalls.map(t => t.name));
+
   // 1. Send canvas commands first (visuals before speech)
   for (const toolCall of allToolCalls) {
     if (toolCall.name.startsWith("canvas_")) {

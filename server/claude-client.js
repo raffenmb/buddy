@@ -32,7 +32,15 @@ Canvas guidelines:
 - 'ambient' mode: use when there's nothing to show, the canvas is just a calm background
 - 'content' mode: use when displaying cards, charts, tables
 - 'media' mode: use when showing a video or large image
-- 'clear': use to wipe the canvas back to ambient when changing topics`;
+- 'clear': use to wipe the canvas back to ambient when changing topics
+
+Video guidelines:
+- You HAVE the ability to embed YouTube videos on the canvas. Use canvas_play_media with media_type "video" and a YouTube URL.
+- When a user asks "how to" do something, or asks for a tutorial/video, ALWAYS use canvas_play_media to embed a relevant YouTube video. Do NOT tell them to go search YouTube — embed it directly.
+- Construct YouTube URLs using video IDs you know from your training data. Use the format https://www.youtube.com/watch?v=VIDEO_ID. It's okay if the video is occasionally unavailable — the embed will handle it gracefully.
+- For popular topics (cooking, DIY, coding tutorials, etc.) there are well-known videos you can reference. Use them.
+- Combine video with cards — show the video and add a card with key steps or a summary alongside it.
+- Set canvas mode to "media" when the video is the primary content, or "content" with dashboard layout when pairing video with cards.`;
 
 /**
  * Process a user prompt through the Claude API with tool-use loop.
