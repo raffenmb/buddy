@@ -4,10 +4,29 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import yts from "yt-search";
 import tools from "./tools.js";
 import session from "./session.js";
 
 const anthropic = new Anthropic();
+
+async function executeYouTubeSearch(input) {
+  try {
+    const maxResults = Math.min(input.max_results || 3, 5);
+    const result = await yts(input.query);
+    const videos = result.videos.slice(0, maxResults).map((v) => ({
+      title: v.title,
+      url: v.url,
+      duration: v.timestamp,
+      views: v.views,
+      author: v.author.name,
+    }));
+    return { videos };
+  } catch (err) {
+    console.error("YouTube search error:", err);
+    return { error: "YouTube search failed", videos: [] };
+  }
+}
 
 const SYSTEM_PROMPT = `You are Buddy, a personal AI assistant displayed as a small avatar character on a screen. You talk to the user through subtitles — your text responses appear as subtitle text next to your avatar, one response at a time, like a character in a movie.
 
@@ -35,12 +54,12 @@ Canvas guidelines:
 - 'clear': use to wipe the canvas back to ambient when changing topics
 
 Video guidelines:
-- You HAVE the ability to embed YouTube videos on the canvas. Use canvas_play_media with media_type "video" and a YouTube URL.
-- When a user asks "how to" do something, or asks for a tutorial/video, ALWAYS use canvas_play_media to embed a relevant YouTube video. Do NOT tell them to go search YouTube — embed it directly.
-- Construct YouTube URLs using video IDs you know from your training data. Use the format https://www.youtube.com/watch?v=VIDEO_ID. It's okay if the video is occasionally unavailable — the embed will handle it gracefully.
-- For popular topics (cooking, DIY, coding tutorials, etc.) there are well-known videos you can reference. Use them.
+- You can search YouTube using the search_youtube tool. It returns real, current video URLs.
+- When a user asks "how to" do something, or wants a tutorial/video, use search_youtube first to find a relevant video, then use canvas_play_media with the URL from the search results.
+- NEVER guess or make up YouTube URLs. ALWAYS use search_youtube to get real URLs first.
+- Pick the most relevant result from the search and embed it with canvas_play_media (media_type "video").
 - Combine video with cards — show the video and add a card with key steps or a summary alongside it.
-- Set canvas mode to "media" when the video is the primary content, or "content" with dashboard layout when pairing video with cards.`;
+- Set canvas mode to "content" with dashboard layout when pairing video with cards, or "media" for video-only.`;
 
 /**
  * Process a user prompt through the Claude API with tool-use loop.
@@ -81,12 +100,23 @@ export async function processPrompt(userText) {
       });
     }
 
-    // Build tool_result blocks — all canvas tools return { status: "rendered" }
-    const toolResults = toolUseBlocks.map((toolUse) => ({
-      type: "tool_result",
-      tool_use_id: toolUse.id,
-      content: JSON.stringify({ status: "rendered" }),
-    }));
+    // Build tool_result blocks
+    const toolResults = await Promise.all(
+      toolUseBlocks.map(async (toolUse) => {
+        if (toolUse.name === "search_youtube") {
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(await executeYouTubeSearch(toolUse.input)),
+          };
+        }
+        return {
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          content: JSON.stringify({ status: "rendered" }),
+        };
+      })
+    );
 
     // Add assistant response and tool results to session
     session.addAssistantResponse(response);

@@ -362,6 +362,25 @@ const tools = [
       required: ["target"],
     },
   },
+  {
+    name: "search_youtube",
+    description:
+      "Search YouTube for videos. Returns real video URLs with titles and durations. ALWAYS use this tool to find videos instead of guessing YouTube URLs. After getting results, use canvas_play_media with the returned URL to embed the video.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query for YouTube (e.g. 'how to make sourdough bread').",
+        },
+        max_results: {
+          type: "integer",
+          description: "Number of results to return (default 3, max 5).",
+        },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 export default tools;
