@@ -26,21 +26,39 @@ export default function Avatar() {
     };
   }, [avatar.isTalking]);
 
-  // Talk duration timer — stop talking after calculated duration
+  // TTS + talk duration — speak subtitle and sync mouth animation
   useEffect(() => {
     if (subtitle.visible && subtitle.text) {
-      const duration = Math.min(
-        Math.max((subtitle.text.length / 15) * 1000, 1000),
-        10000
-      );
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
 
+      const utterance = new SpeechSynthesisUtterance(subtitle.text);
+      utterance.rate = 1;
+      utterance.pitch = 1;
+
+      utterance.onend = () => {
+        dispatch({ type: "STOP_TALKING" });
+      };
+
+      utterance.onerror = () => {
+        dispatch({ type: "STOP_TALKING" });
+      };
+
+      window.speechSynthesis.speak(utterance);
+
+      // Fallback timer in case onend doesn't fire
+      const fallbackDuration = Math.min(
+        Math.max((subtitle.text.length / 15) * 1000, 1000),
+        15000
+      );
       talkTimerRef.current = setTimeout(() => {
         dispatch({ type: "STOP_TALKING" });
-      }, duration);
+      }, fallbackDuration);
     }
 
     return () => {
       clearTimeout(talkTimerRef.current);
+      window.speechSynthesis.cancel();
     };
   }, [subtitle.visible, subtitle.text, dispatch]);
 
