@@ -38,17 +38,56 @@ export default function InputBar() {
     }
   }
 
+  const hasText = text.trim().length > 0;
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900/90 backdrop-blur border-t border-gray-800">
-      <input
-        type="text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={`Type something to ${agent.name}...`}
-        disabled={input.isProcessing}
-        className="w-full bg-transparent text-white px-6 py-4 outline-none placeholder-gray-500 disabled:opacity-50"
-      />
+    <div className="px-3 py-3" style={{ backgroundColor: "var(--color-bg-base)" }}>
+      <div
+        className="flex items-center gap-2 rounded-full px-4 py-2"
+        style={{
+          backgroundColor: "var(--color-bg-surface)",
+          boxShadow: "var(--shadow-card)",
+          border: "1px solid var(--color-border)",
+        }}
+      >
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={`Talk to ${agent.name}...`}
+          disabled={input.isProcessing}
+          className="flex-1 bg-transparent outline-none text-sm disabled:opacity-50"
+          style={{
+            color: "var(--color-text-primary)",
+            fontFamily: "var(--font-family-base)",
+          }}
+        />
+        <button
+          onClick={handleSubmit}
+          disabled={!hasText || input.isProcessing}
+          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-40"
+          style={{
+            backgroundColor: hasText
+              ? "var(--color-accent)"
+              : "var(--color-bg-raised)",
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={hasText ? "#FFFFFF" : "var(--color-text-muted)"}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

@@ -73,31 +73,39 @@ export default function FileManager({ agentId }) {
     }
   }
 
-  // Filter out core files — those are edited in the main editor
   const nonCoreFiles = files.filter((f) => !f.isCore);
 
   return (
     <div>
       {nonCoreFiles.length === 0 && !showNewFile && (
-        <p className="text-gray-500 text-sm mb-2">No extra files yet.</p>
+        <p className="text-sm mb-2" style={{ color: "var(--color-text-muted)" }}>
+          No extra files yet.
+        </p>
       )}
 
       {nonCoreFiles.map((f) => (
         <div
           key={f.name}
-          className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-800 group"
+          className="flex items-center justify-between py-2 px-2 rounded-xl mb-1"
         >
-          <span className="text-sm text-gray-300">{f.name}</span>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="text-sm" style={{ color: "var(--color-text-primary)" }}>
+            {f.name}
+          </span>
+          <div className="flex gap-1">
             <button
               onClick={() => openFile(f.name)}
-              className="text-xs px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+              className="text-xs px-3 py-1 rounded-full font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--color-bg-raised)",
+                color: "var(--color-text-secondary)",
+              }}
             >
               Edit
             </button>
             <button
               onClick={() => deleteFile(f.name)}
-              className="text-xs px-2 py-0.5 bg-red-900/50 hover:bg-red-800/50 rounded text-red-300"
+              className="text-xs px-3 py-1 rounded-full font-medium transition-colors"
+              style={{ color: "#EF4444" }}
             >
               Delete
             </button>
@@ -107,19 +115,35 @@ export default function FileManager({ agentId }) {
 
       {/* Inline file editor */}
       {editingFile && (
-        <div className="mt-2 border border-gray-700 rounded-lg p-3">
+        <div
+          className="mt-2 rounded-xl p-3"
+          style={{
+            border: "1px solid var(--color-border)",
+            backgroundColor: "var(--color-bg-surface)",
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-300">{editingFile}</span>
+            <span
+              className="text-sm font-medium"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {editingFile}
+            </span>
             <div className="flex gap-2">
               <button
                 onClick={saveFile}
-                className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white"
+                className="text-xs px-3 py-1.5 rounded-full text-white font-medium"
+                style={{ backgroundColor: "var(--color-accent)" }}
               >
                 Save
               </button>
               <button
                 onClick={() => setEditingFile(null)}
-                className="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                className="text-xs px-3 py-1.5 rounded-full font-medium"
+                style={{
+                  backgroundColor: "var(--color-bg-raised)",
+                  color: "var(--color-text-secondary)",
+                }}
               >
                 Cancel
               </button>
@@ -128,7 +152,12 @@ export default function FileManager({ agentId }) {
           <textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="w-full h-40 bg-gray-900 border border-gray-700 rounded p-2 text-sm text-gray-200 font-mono resize-y outline-none focus:border-indigo-500"
+            className="w-full h-40 rounded-xl p-2 text-sm font-mono resize-y outline-none"
+            style={{
+              backgroundColor: "var(--color-bg-raised)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text-primary)",
+            }}
           />
         </div>
       )}
@@ -140,19 +169,29 @@ export default function FileManager({ agentId }) {
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             placeholder="filename.md"
-            className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 outline-none focus:border-indigo-500"
+            className="flex-1 rounded-xl px-3 py-1.5 text-sm outline-none"
+            style={{
+              backgroundColor: "var(--color-bg-raised)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text-primary)",
+            }}
             onKeyDown={(e) => e.key === "Enter" && createFile()}
             autoFocus
           />
           <button
             onClick={createFile}
-            className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white"
+            className="text-xs px-3 py-1.5 rounded-full text-white font-medium"
+            style={{ backgroundColor: "var(--color-accent)" }}
           >
             Create
           </button>
           <button
             onClick={() => { setShowNewFile(false); setNewFileName(""); }}
-            className="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+            className="text-xs px-3 py-1.5 rounded-full font-medium"
+            style={{
+              backgroundColor: "var(--color-bg-raised)",
+              color: "var(--color-text-secondary)",
+            }}
           >
             Cancel
           </button>
@@ -160,7 +199,12 @@ export default function FileManager({ agentId }) {
       ) : (
         <button
           onClick={() => setShowNewFile(true)}
-          className="mt-2 text-xs px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
+          className="mt-2 text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            color: "var(--color-text-secondary)",
+            border: "1px solid var(--color-border)",
+          }}
         >
           + Add File
         </button>

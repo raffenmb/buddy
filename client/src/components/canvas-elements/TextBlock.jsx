@@ -1,17 +1,46 @@
-const STYLE_CLASSES = {
-  document: "bg-gray-800/80 text-gray-300",
-  note: "bg-yellow-900/20 border border-yellow-700/30 text-gray-300",
-  code: "bg-gray-900/90 font-mono text-sm text-green-400 overflow-x-auto",
-  quote: "bg-gray-800/80 border-l-4 border-indigo-500 italic text-gray-400",
+const STYLE_MAP = {
+  document: {},
+  note: { borderLeftWidth: "4px", borderLeftColor: "var(--color-tertiary)" },
+  code: { fontFamily: "monospace", fontSize: "0.875rem" },
+  quote: { borderLeftWidth: "4px", borderLeftColor: "var(--color-accent)", fontStyle: "italic" },
 };
 
 export default function TextBlock({ id, title, content, style = "document" }) {
-  const styleClass = STYLE_CLASSES[style] || STYLE_CLASSES.document;
+  const extraStyle = STYLE_MAP[style] || STYLE_MAP.document;
 
   return (
-    <div data-id={id} className={`rounded-xl p-6 ${styleClass}`}>
-      {title && <h3 className="text-lg font-semibold text-white mb-3">{title}</h3>}
-      <div className="whitespace-pre-wrap">{content}</div>
+    <div
+      data-id={id}
+      className="rounded-2xl p-6"
+      style={{
+        backgroundColor: style === "code"
+          ? "var(--color-bg-raised)"
+          : "var(--color-bg-surface)",
+        boxShadow: "var(--shadow-card)",
+        border: "1px solid var(--color-border)",
+        ...extraStyle,
+      }}
+    >
+      {title && (
+        <h3
+          className="text-lg font-semibold mb-3"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          {title}
+        </h3>
+      )}
+      <div
+        className="whitespace-pre-wrap text-sm"
+        style={{
+          color: style === "code"
+            ? "var(--color-secondary)"
+            : style === "quote"
+            ? "var(--color-text-muted)"
+            : "var(--color-text-secondary)",
+        }}
+      >
+        {content}
+      </div>
     </div>
   );
 }

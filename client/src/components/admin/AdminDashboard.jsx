@@ -1,51 +1,63 @@
-import { useState } from "react";
 import { useBuddy } from "../../context/BuddyState";
 import AgentList from "./AgentList";
 import AgentEditor from "./AgentEditor";
 
 export default function AdminDashboard() {
-  const { dispatch } = useBuddy();
-  const [selectedAgentId, setSelectedAgentId] = useState("buddy");
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { state, dispatch } = useBuddy();
+  const { adminScreen, adminSelectedAgentId } = state;
 
   function goBack() {
     dispatch({ type: "SET_VIEW", payload: "buddy" });
   }
 
   function handleDeleted() {
-    setSelectedAgentId("buddy");
-    setRefreshKey((k) => k + 1);
+    dispatch({ type: "ADMIN_POP_TO_LIST" });
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-900 text-white flex flex-col">
+    <div
+      className="flex flex-col h-full"
+      style={{ backgroundColor: "var(--color-bg-base)" }}
+    >
       {/* Header */}
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-gray-800 bg-gray-900/95 backdrop-blur">
+      <div
+        className="flex items-center gap-4 px-4 py-3"
+        style={{
+          backgroundColor: "var(--color-bg-surface)",
+          borderBottom: "1px solid var(--color-border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+      >
         <button
-          onClick={goBack}
-          className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+          onClick={adminScreen === "editor" ? () => dispatch({ type: "ADMIN_POP_TO_LIST" }) : goBack}
+          className="flex items-center gap-1.5 text-sm transition-colors"
+          style={{ color: "var(--color-text-secondary)" }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5" />
             <path d="M12 19l-7-7 7-7" />
           </svg>
-          Back to Buddy
+          {adminScreen === "editor" ? "Back" : "Back to Buddy"}
         </button>
-        <h1 className="text-lg font-semibold">Agent Dashboard</h1>
+        <h1
+          className="text-lg font-semibold"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          {adminScreen === "editor" ? "Edit Agent" : "Agent Dashboard"}
+        </h1>
       </div>
 
-      {/* Body: sidebar + editor */}
-      <div className="flex flex-1 overflow-hidden">
-        <AgentList
-          selectedId={selectedAgentId}
-          onSelect={setSelectedAgentId}
-          refreshKey={refreshKey}
-        />
-        <AgentEditor
-          key={selectedAgentId}
-          agentId={selectedAgentId}
-          onDeleted={handleDeleted}
-        />
+      {/* Body: stack nav */}
+      <div className="flex-1 overflow-y-auto">
+        {adminScreen === "editor" && adminSelectedAgentId ? (
+          <AgentEditor
+            key={adminSelectedAgentId}
+            agentId={adminSelectedAgentId}
+            onDeleted={handleDeleted}
+          />
+        ) : (
+          <AgentList />
+        )}
       </div>
     </div>
   );

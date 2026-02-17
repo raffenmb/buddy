@@ -14,22 +14,40 @@ const ALL_TOOLS = [
   { name: "remember_fact", label: "Remember Facts" },
 ];
 
+function ToggleSwitch({ checked, onChange }) {
+  return (
+    <button
+      onClick={onChange}
+      className="relative w-11 h-6 rounded-full flex-shrink-0 transition-colors"
+      style={{
+        backgroundColor: checked ? "var(--color-accent)" : "var(--color-bg-raised)",
+        border: checked ? "none" : "1px solid var(--color-border)",
+      }}
+    >
+      <span
+        className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+        style={{
+          backgroundColor: checked ? "#FFFFFF" : "var(--color-text-muted)",
+          left: checked ? "calc(100% - 22px)" : "2px",
+        }}
+      />
+    </button>
+  );
+}
+
 export default function ToolSelector({ enabledTools, onChange }) {
-  // null means all tools enabled
   const allEnabled = enabledTools === null;
   const selected = allEnabled ? ALL_TOOLS.map((t) => t.name) : enabledTools || [];
 
   function toggle(toolName) {
     let next;
     if (allEnabled) {
-      // Switching from "all" to specific — remove this one
       next = ALL_TOOLS.map((t) => t.name).filter((n) => n !== toolName);
     } else if (selected.includes(toolName)) {
       next = selected.filter((n) => n !== toolName);
     } else {
       next = [...selected, toolName];
     }
-    // If all selected, set to null (all tools)
     onChange(next.length === ALL_TOOLS.length ? null : next);
   }
 
@@ -46,31 +64,44 @@ export default function ToolSelector({ enabledTools, onChange }) {
       <div className="flex gap-2 mb-3">
         <button
           onClick={selectAll}
-          className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
+          className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            color: "var(--color-text-secondary)",
+            border: "1px solid var(--color-border)",
+          }}
         >
           Select All
         </button>
         <button
           onClick={deselectAll}
-          className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
+          className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            color: "var(--color-text-secondary)",
+            border: "1px solid var(--color-border)",
+          }}
         >
           Deselect All
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="flex flex-col gap-1">
         {ALL_TOOLS.map((tool) => (
-          <label
+          <div
             key={tool.name}
-            className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white"
+            className="flex items-center justify-between py-2 px-1"
           >
-            <input
-              type="checkbox"
+            <span
+              className="text-sm"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {tool.label}
+            </span>
+            <ToggleSwitch
               checked={allEnabled || selected.includes(tool.name)}
               onChange={() => toggle(tool.name)}
-              className="accent-indigo-500"
             />
-            {tool.label}
-          </label>
+          </div>
         ))}
       </div>
     </div>

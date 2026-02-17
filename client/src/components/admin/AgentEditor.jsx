@@ -40,7 +40,6 @@ export default function AgentEditor({ agentId, onDeleted }) {
       setIdentity(identityData.content || "");
       setUserInfo(userInfoData.content || "");
 
-      // Parse enabled_tools
       if (agentData.enabled_tools) {
         try {
           const parsed = typeof agentData.enabled_tools === "string"
@@ -97,116 +96,192 @@ export default function AgentEditor({ agentId, onDeleted }) {
 
   if (!agent) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
-        Select an agent to edit
+      <div
+        className="flex-1 flex items-center justify-center p-8"
+        style={{ color: "var(--color-text-muted)" }}
+      >
+        Loading...
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        {/* Name */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none focus:border-indigo-500"
-          />
-        </div>
+    <div className="p-6 max-w-2xl mx-auto space-y-6">
+      {/* Name */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-1"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Name
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-xl px-3 py-2 outline-none text-sm"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
+        />
+      </div>
 
-        {/* Avatar */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-2">Avatar</label>
-          <div className="flex gap-4">
-            {Object.entries(AVATAR_PRESETS).map(([key, preset]) => (
-              <button
-                key={key}
-                onClick={() => setAvatar(key)}
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-colors ${
-                  avatar === key
-                    ? "border-indigo-500 bg-indigo-500/10"
-                    : "border-gray-700 hover:border-gray-500"
-                }`}
-              >
-                <img src={preset.idle} alt={preset.label} width="60" height="60" />
-                <span className="text-xs text-gray-400">{preset.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Model */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Model</label>
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none focus:border-indigo-500 cursor-pointer"
-          >
-            {MODEL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Identity */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Identity (identity.md)</label>
-          <textarea
-            value={identity}
-            onChange={(e) => setIdentity(e.target.value)}
-            rows={10}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono outline-none focus:border-indigo-500 resize-y"
-          />
-        </div>
-
-        {/* User Info */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">User Info (user.md)</label>
-          <textarea
-            value={userInfo}
-            onChange={(e) => setUserInfo(e.target.value)}
-            rows={4}
-            placeholder="Information about the user this agent should know..."
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono outline-none focus:border-indigo-500 resize-y"
-          />
-        </div>
-
-        {/* Tools */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-2">Enabled Tools</label>
-          <ToolSelector enabledTools={enabledTools} onChange={setEnabledTools} />
-        </div>
-
-        {/* Files */}
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-2">Extra Files</label>
-          <FileManager agentId={agentId} />
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-4 border-t border-gray-800">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-white font-medium transition-colors"
-          >
-            {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
-          </button>
-
-          {agentId !== "buddy" && (
+      {/* Avatar */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-2"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Avatar
+        </label>
+        <div className="flex gap-4 flex-wrap">
+          {Object.entries(AVATAR_PRESETS).map(([key, preset]) => (
             <button
-              onClick={handleDelete}
-              className="px-5 py-2 bg-red-900/50 hover:bg-red-800/50 rounded-lg text-red-300 font-medium transition-colors"
+              key={key}
+              onClick={() => setAvatar(key)}
+              className="flex flex-col items-center gap-1 p-2 rounded-xl transition-colors"
+              style={{
+                border: avatar === key
+                  ? "2px solid var(--color-accent)"
+                  : "2px solid var(--color-border)",
+                backgroundColor: avatar === key
+                  ? "var(--color-bg-raised)"
+                  : "transparent",
+              }}
             >
-              Delete Agent
+              <img src={preset.idle} alt={preset.label} width="60" height="60" />
+              <span
+                className="text-xs"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                {preset.label}
+              </span>
             </button>
-          )}
+          ))}
         </div>
+      </div>
+
+      {/* Model — button picker instead of <select> */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-2"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Model
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {MODEL_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setModel(opt.value)}
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: model === opt.value
+                  ? "var(--color-accent)"
+                  : "var(--color-bg-raised)",
+                color: model === opt.value
+                  ? "#FFFFFF"
+                  : "var(--color-text-secondary)",
+                border: model === opt.value
+                  ? "1px solid var(--color-accent)"
+                  : "1px solid var(--color-border)",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Identity */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-1"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Identity (identity.md)
+        </label>
+        <textarea
+          value={identity}
+          onChange={(e) => setIdentity(e.target.value)}
+          rows={10}
+          className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none resize-y"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
+        />
+      </div>
+
+      {/* User Info */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-1"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          User Info (user.md)
+        </label>
+        <textarea
+          value={userInfo}
+          onChange={(e) => setUserInfo(e.target.value)}
+          rows={4}
+          placeholder="Information about the user this agent should know..."
+          className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none resize-y"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
+        />
+      </div>
+
+      {/* Tools */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-2"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Enabled Tools
+        </label>
+        <ToolSelector enabledTools={enabledTools} onChange={setEnabledTools} />
+      </div>
+
+      {/* Files */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-2"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Extra Files
+        </label>
+        <FileManager agentId={agentId} />
+      </div>
+
+      {/* Actions */}
+      <div
+        className="pt-4"
+        style={{ borderTop: "1px solid var(--color-border)" }}
+      >
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full px-5 py-3 rounded-xl text-white font-semibold transition-colors disabled:opacity-50"
+          style={{ backgroundColor: "var(--color-accent)" }}
+        >
+          {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
+        </button>
+
+        {agentId !== "buddy" && (
+          <button
+            onClick={handleDelete}
+            className="w-full mt-3 px-5 py-2 text-sm font-medium transition-colors"
+            style={{ color: "#EF4444" }}
+          >
+            Delete Agent
+          </button>
+        )}
       </div>
     </div>
   );

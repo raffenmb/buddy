@@ -1,137 +1,184 @@
 import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
+  VictoryChart,
+  VictoryBar,
+  VictoryLine,
+  VictoryArea,
+  VictoryPie,
+  VictoryAxis,
+  VictoryTooltip,
+  VictoryVoronoiContainer,
+  VictoryTheme,
+} from "victory";
+import { useTheme } from "../../hooks/useTheme";
 
-const DEFAULT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+const LIGHT_COLORS = ["#FF6B8A", "#5BCCB3", "#FFB84D", "#8B5CF6", "#3B82F6", "#EC4899"];
+const DARK_COLORS = ["#FF8AAB", "#6EE7C8", "#FFC970", "#A78BFA", "#60A5FA", "#F472B6"];
 
-const tooltipStyle = {
-  contentStyle: {
-    backgroundColor: "#1f2937",
-    border: "1px solid #374151",
-    borderRadius: "8px",
-  },
-  labelStyle: { color: "#e5e7eb" },
-  itemStyle: { color: "#e5e7eb" },
-};
+function getVictoryTheme(isDark) {
+  const textColor = isDark ? "#9898B0" : "#6E6E8A";
+  const gridColor = isDark ? "#2E2E48" : "#EDEDF5";
 
-function renderBarChart(data, data_keys, palette) {
-  return (
-    <BarChart data={data}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-      <XAxis dataKey="label" stroke="#9ca3af" />
-      <YAxis stroke="#9ca3af" />
-      <Tooltip {...tooltipStyle} />
-      <Legend />
-      {data_keys.map((key, i) => (
-        <Bar key={key} dataKey={key} fill={palette[i % palette.length]} />
-      ))}
-    </BarChart>
-  );
+  return {
+    ...VictoryTheme.clean,
+    axis: {
+      ...VictoryTheme.clean.axis,
+      style: {
+        axis: { stroke: gridColor, strokeWidth: 1 },
+        tickLabels: { fill: textColor, fontSize: 11, fontFamily: "'Figtree', system-ui, sans-serif" },
+        grid: { stroke: gridColor, strokeDasharray: "4,4" },
+      },
+    },
+  };
 }
 
-function renderLineChart(data, data_keys, palette) {
-  return (
-    <LineChart data={data}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-      <XAxis dataKey="label" stroke="#9ca3af" />
-      <YAxis stroke="#9ca3af" />
-      <Tooltip {...tooltipStyle} />
-      <Legend />
-      {data_keys.map((key, i) => (
-        <Line
-          key={key}
-          type="monotone"
-          dataKey={key}
-          stroke={palette[i % palette.length]}
-          strokeWidth={2}
-          dot={false}
-        />
-      ))}
-    </LineChart>
-  );
+function BarChartContent({ data, data_keys, palette }) {
+  if (data_keys.length === 1) {
+    return (
+      <VictoryBar
+        data={data}
+        x="label"
+        y={data_keys[0]}
+        style={{ data: { fill: palette[0], borderRadius: 4 } }}
+        cornerRadius={{ top: 4 }}
+      />
+    );
+  }
+  return data_keys.map((key, i) => (
+    <VictoryBar
+      key={key}
+      data={data}
+      x="label"
+      y={key}
+      style={{ data: { fill: palette[i % palette.length] } }}
+      cornerRadius={{ top: 4 }}
+    />
+  ));
 }
 
-function renderAreaChart(data, data_keys, palette) {
-  return (
-    <AreaChart data={data}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-      <XAxis dataKey="label" stroke="#9ca3af" />
-      <YAxis stroke="#9ca3af" />
-      <Tooltip {...tooltipStyle} />
-      <Legend />
-      {data_keys.map((key, i) => (
-        <Area
-          key={key}
-          type="monotone"
-          dataKey={key}
-          stroke={palette[i % palette.length]}
-          fill={palette[i % palette.length]}
-          fillOpacity={0.3}
-        />
-      ))}
-    </AreaChart>
-  );
+function LineChartContent({ data, data_keys, palette }) {
+  return data_keys.map((key, i) => (
+    <VictoryLine
+      key={key}
+      data={data}
+      x="label"
+      y={key}
+      style={{ data: { stroke: palette[i % palette.length], strokeWidth: 2 } }}
+    />
+  ));
 }
 
-function renderPieChart(data, data_keys, palette) {
-  const pieData = data.map((item) => ({
-    name: item.label,
-    value: item[data_keys[0]],
-  }));
-
-  return (
-    <PieChart>
-      <Tooltip {...tooltipStyle} />
-      <Legend />
-      <Pie
-        data={pieData}
-        dataKey="value"
-        nameKey="name"
-        cx="50%"
-        cy="50%"
-        outerRadius={100}
-        label
-      >
-        {pieData.map((_, i) => (
-          <Cell key={i} fill={palette[i % palette.length]} />
-        ))}
-      </Pie>
-    </PieChart>
-  );
+function AreaChartContent({ data, data_keys, palette }) {
+  return data_keys.map((key, i) => (
+    <VictoryArea
+      key={key}
+      data={data}
+      x="label"
+      y={key}
+      style={{
+        data: {
+          fill: palette[i % palette.length],
+          fillOpacity: 0.25,
+          stroke: palette[i % palette.length],
+          strokeWidth: 2,
+        },
+      }}
+    />
+  ));
 }
 
 export default function Chart({ id, chart_type, title, data, data_keys, colors }) {
-  const palette = colors && colors.length > 0 ? colors : DEFAULT_COLORS;
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const palette = colors && colors.length > 0
+    ? colors
+    : isDark ? DARK_COLORS : LIGHT_COLORS;
+  const victoryTheme = getVictoryTheme(isDark);
 
-  const chartRenderers = {
-    bar: renderBarChart,
-    line: renderLineChart,
-    area: renderAreaChart,
-    pie: renderPieChart,
+  if (chart_type === "pie") {
+    const pieData = data.map((item, i) => ({
+      x: item.label,
+      y: item[data_keys[0]],
+    }));
+
+    return (
+      <div
+        data-id={id}
+        className="rounded-2xl p-6"
+        style={{
+          backgroundColor: "var(--color-bg-surface)",
+          boxShadow: "var(--shadow-card)",
+          border: "1px solid var(--color-border)",
+        }}
+      >
+        {title && (
+          <h3
+            className="text-lg font-semibold mb-4"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            {title}
+          </h3>
+        )}
+        <div style={{ maxWidth: 350, margin: "0 auto" }}>
+          <VictoryPie
+            data={pieData}
+            colorScale={palette}
+            innerRadius={60}
+            padAngle={2}
+            style={{
+              labels: {
+                fill: isDark ? "#F0F0FA" : "#1A1A2E",
+                fontSize: 11,
+                fontFamily: "'Figtree', system-ui, sans-serif",
+              },
+            }}
+            labels={({ datum }) => `${datum.x}: ${datum.y}`}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const renderers = {
+    bar: BarChartContent,
+    line: LineChartContent,
+    area: AreaChartContent,
   };
 
-  const renderChart = chartRenderers[chart_type] || chartRenderers.bar;
+  const ContentRenderer = renderers[chart_type] || renderers.bar;
 
   return (
-    <div data-id={id} className="bg-gray-800/80 backdrop-blur rounded-xl p-6">
-      {title && <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>}
-      <ResponsiveContainer width="100%" height={300}>
-        {renderChart(data, data_keys, palette)}
-      </ResponsiveContainer>
+    <div
+      data-id={id}
+      className="rounded-2xl p-6"
+      style={{
+        backgroundColor: "var(--color-bg-surface)",
+        boxShadow: "var(--shadow-card)",
+        border: "1px solid var(--color-border)",
+      }}
+    >
+      {title && (
+        <h3
+          className="text-lg font-semibold mb-4"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          {title}
+        </h3>
+      )}
+      <VictoryChart
+        theme={victoryTheme}
+        domainPadding={{ x: 20 }}
+        height={280}
+        containerComponent={
+          <VictoryVoronoiContainer
+            labels={({ datum }) => `${datum.label}: ${datum._y || datum.y}`}
+            labelComponent={<VictoryTooltip cornerRadius={8} flyoutStyle={{ fill: isDark ? "#1E1E32" : "#FFFFFF", stroke: isDark ? "#2E2E48" : "#EDEDF5" }} style={{ fill: isDark ? "#F0F0FA" : "#1A1A2E", fontSize: 11, fontFamily: "'Figtree', system-ui, sans-serif" }} />}
+          />
+        }
+      >
+        <VictoryAxis />
+        <VictoryAxis dependentAxis />
+        <ContentRenderer data={data} data_keys={data_keys} palette={palette} />
+      </VictoryChart>
     </div>
   );
 }

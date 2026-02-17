@@ -155,8 +155,8 @@ All messages are JSON. This protocol is shared across all clients (web, mobile).
 | Remote access | Tailscale | Zero-config VPN, encrypted |
 | Web frontend | React 18 (Vite) | Component model, fast iteration |
 | Mobile frontend | React Native (Expo) | Shared JS, native feel |
-| Canvas styling | Tailwind CSS | Rapid UI |
-| Charts | Recharts | React-native charting |
+| Canvas styling | Tailwind CSS 4 (NativeWind on mobile) | Rapid UI, cross-platform via NativeWind |
+| Charts | Victory (web) / victory-native (mobile) | Same API on both platforms |
 | State management | React Context + useReducer | Fits command pattern |
 | TTS (web) | Browser Speech API | Free, no dependencies |
 | YouTube search | yt-search | Real video URLs, no API key |
@@ -183,20 +183,28 @@ buddy/
 │   │   ├── context/
 │   │   │   └── BuddyState.jsx  # Global state (canvas + subtitle + avatar)
 │   │   ├── components/
-│   │   │   ├── Avatar.jsx      # Avatar image + mouth toggle + subtitle + TTS
-│   │   │   ├── Canvas.jsx      # Full-screen background canvas
-│   │   │   ├── InputBar.jsx    # Text input (sends agent_id with prompts)
-│   │   │   ├── AgentSwitcher.jsx  # Dropdown to switch between agents (Layer 2)
+│   │   │   ├── TopBar.jsx      # Agent name, connection dot, theme toggle, admin gear
+│   │   │   ├── Avatar.jsx      # Avatar image + mouth toggle + subtitle + TTS (JS animations)
+│   │   │   ├── Canvas.jsx      # Full-screen background canvas (flexbox-only layouts)
+│   │   │   ├── InputBar.jsx    # Pill-shaped input (sends agent_id with prompts)
+│   │   │   ├── admin/          # Stack-nav admin dashboard
+│   │   │   │   ├── AdminDashboard.jsx
+│   │   │   │   ├── AgentList.jsx
+│   │   │   │   ├── AgentEditor.jsx  # Button picker model selector
+│   │   │   │   ├── ToolSelector.jsx  # Toggle switches (no checkboxes)
+│   │   │   │   └── FileManager.jsx
 │   │   │   └── canvas-elements/
 │   │   │       ├── Card.jsx
-│   │   │       ├── Chart.jsx
-│   │   │       ├── DataTable.jsx
+│   │   │       ├── Chart.jsx     # Victory charts
+│   │   │       ├── DataTable.jsx  # Flex rows (no HTML tables)
 │   │   │       ├── TextBlock.jsx
 │   │   │       ├── VideoPlayer.jsx  # YouTube embeds + raw video
 │   │   │       ├── ImageDisplay.jsx
 │   │   │       └── Notification.jsx
 │   │   ├── hooks/
-│   │   │   └── useWebSocket.js
+│   │   │   ├── useWebSocket.js
+│   │   │   ├── useTheme.jsx     # Theme provider + dark mode toggle
+│   │   │   └── useEntryAnimation.js  # CSS transition entry animations
 │   │   └── lib/
 │   │       └── commandRouter.js
 │   ├── index.html
@@ -224,15 +232,18 @@ Everything below is implemented and working.
 - Tool use loop with 12 tools (11 canvas + YouTube search)
 - In-memory session with rolling conversation history
 - Response splitter (canvas commands before subtitles)
-- React frontend with global state (useReducer, 16 action types)
-- Avatar with two-frame mouth toggle, idle bob animation
+- React frontend with global state (useReducer, 18 action types including admin stack nav)
+- Light/dark theme with Figtree font, soft pastel design system (CSS custom properties)
+- Avatar with two-frame mouth toggle, JS-driven bob animation (requestAnimationFrame)
 - Browser TTS synced to mouth animation
-- Canvas with 5 layout modes (single, two-column, grid, dashboard, fullscreen)
-- 7 canvas element components (Card, Chart, DataTable, TextBlock, VideoPlayer, ImageDisplay, Notification)
+- Canvas with 5 flexbox-only layout modes (single, two-column, grid, dashboard, fullscreen)
+- 7 canvas element components (Card, Chart via Victory, DataTable via flex rows, TextBlock, VideoPlayer, ImageDisplay, Notification)
 - YouTube embed support (auto-detects YouTube URLs, renders iframe)
 - YouTube search tool (server-side, returns real video URLs)
-- Element enter animations, subtitle fade-in, ambient gradient background
+- Transition-based entry animations (no @keyframes), subtitle fade-in
 - Auto-deduplication of element IDs
+- **Cross-platform ready:** no backdrop-blur, CSS Grid, `<table>`, `<select>`, `<style>` tags, or `group-hover:` — all patterns compatible with React Native/NativeWind
+- Admin dashboard with stack navigation, button picker model selector, toggle switch tool selector
 
 ### Current Limitations (addressed in later layers)
 - Sessions reset on server restart (in-memory only)
@@ -397,11 +408,11 @@ The user can switch between agents via a frontend dropdown. The server loads the
   ```
 - When switching agents, the server clears the current canvas (sends `canvas_set_mode: clear`) so the new agent starts fresh.
 
-**Client changes:**
-- `client/src/components/AgentSwitcher.jsx` — New component. A dropdown in the top bar or near the input bar showing available agents. Fetches from `GET /api/agents` on mount. Selecting an agent sends the ID with the next prompt and triggers a `agent_switch` message.
-- `client/src/context/BuddyState.jsx` — Add `currentAgent` to state. New action type `SET_AGENT`. Agent info (name, id) stored in state so avatar and UI can adapt.
-- `client/src/components/InputBar.jsx` — Include `agent_id` from state when posting to `/api/prompt`.
-- `client/src/components/Avatar.jsx` — Display the current agent's name near the avatar.
+**Client changes (already implemented):**
+- `client/src/components/TopBar.jsx` — Shows current agent name and connection status. Agent switching done from admin dashboard (no `<select>` dropdown — cross-platform).
+- `client/src/context/BuddyState.jsx` — `agent` in state with `SET_AGENT` action. Admin stack nav with `ADMIN_PUSH_EDITOR` / `ADMIN_POP_TO_LIST`.
+- `client/src/components/InputBar.jsx` — Includes `agent_id` from state when posting to `/api/prompt`.
+- `client/src/components/Avatar.jsx` — Displays the current agent's name below the avatar.
 
 **Future (Layer 4+):** Natural language agent switching — if you say "let me talk to Chef Marco," the current agent can detect the intent and trigger a handoff via a `switch_agent` tool call. The server would process the switch and route the conversation to the new agent.
 
@@ -454,44 +465,67 @@ Each agent accumulates knowledge about the user over time. Memories are key-valu
 
 ## Layer 3 — Mobile App
 
-React Native app using Expo. Reuses the same WebSocket protocol and state management pattern.
+React Native app using Expo. The web client has been designed for 1:1 cross-platform parity — most component logic, state, and styling patterns carry over directly.
 
 ### 3.1 Project Setup
 
 ```bash
 npx create-expo-app buddy-mobile
 cd buddy-mobile
-npx expo install expo-secure-store expo-speech
+npx expo install expo-secure-store expo-speech expo-font
+npm install nativewind victory-native react-native-youtube-iframe @react-navigation/native @react-navigation/native-stack
 ```
 
-### 3.2 Shared Logic
+### 3.2 What Copies Over Directly (no changes needed)
 
-The mobile app reuses the same patterns, not the same code (React Native components are different from web):
+These files use only cross-platform patterns and can be copied 1:1 from `client/src/`:
 
-- **State management** — Same `useReducer` with the same action types and reducer logic. Copy `BuddyState.jsx` and `commandRouter.js` directly.
-- **WebSocket hook** — Same logic, connects to Tailscale IP. Store the server URL and auth token in Expo SecureStore.
-- **TTS** — Use `expo-speech` instead of browser `speechSynthesis`.
+- **`context/BuddyState.jsx`** — useReducer, all action types, deduplication logic
+- **`lib/commandRouter.js`** — pure JS mapping
+- **`hooks/useTheme.jsx`** — ThemeProvider context (swap `localStorage` → `expo-secure-store`, `document.documentElement` → React Native `Appearance`)
+- **`hooks/useEntryAnimation.js`** — swap `data-entered` CSS transitions → `Animated.Value` with `Animated.timing`
 
-### 3.3 Native Components
+### 3.3 What Needs Thin Wrappers
 
-| Web Component | Mobile Equivalent |
-|---------------|------------------|
-| `Avatar.jsx` | Same concept — `Image` component with animated toggle, `Text` for subtitle |
-| `Canvas.jsx` | `ScrollView` with layout logic, same element rendering |
-| `InputBar.jsx` | `TextInput` with keyboard handling |
-| `Card.jsx` | `View` with styled container |
-| `Chart.jsx` | `react-native-chart-kit` or `victory-native` |
-| `DataTable.jsx` | `FlatList` with row rendering |
-| `TextBlock.jsx` | `Text` with style variants |
-| `VideoPlayer.jsx` | `expo-av` Video component or `react-native-webview` for YouTube |
-| `Notification.jsx` | `Animated.View` toast |
+The web components were designed to minimize these differences. Each needs a small platform adapter, not a rewrite:
 
-### 3.4 Mobile-Specific Considerations
+| Web Component | Mobile Change | Effort |
+|---------------|--------------|--------|
+| `TopBar.jsx` | `View` + `TouchableOpacity` instead of `div` + `button` | Minimal — same layout, same icons |
+| `Avatar.jsx` | `Animated.View` for bob (already uses `requestAnimationFrame`), `expo-speech` for TTS | Small — animation logic identical, TTS API swap |
+| `Canvas.jsx` | `ScrollView` instead of `div` with `overflow-y-auto`, same flexbox layouts | Small — layouts are already flexbox-only |
+| `InputBar.jsx` | `TextInput` instead of `input`, keyboard-aware container | Small — same pill shape, same logic |
+| `Card.jsx` | `View` + `Text` instead of `div` — same inline styles | Trivial |
+| `Chart.jsx` | `import from "victory-native"` instead of `"victory"` — same API | Trivial |
+| `DataTable.jsx` | `View` flex rows — already flex-based, no `<table>` to replace | Trivial |
+| `TextBlock.jsx` | `View` + `Text` — same style map | Trivial |
+| `VideoPlayer.jsx` | `react-native-youtube-iframe` instead of `<iframe>` | Moderate — different component API |
+| `ImageDisplay.jsx` | `Image` component — same props | Trivial |
+| `Notification.jsx` | `Animated.View` toast — same fade logic | Small |
+| `AdminDashboard.jsx` | `@react-navigation/native-stack` — already uses stack nav pattern in state | Small — swap state-based nav for native stack |
+| `AgentList.jsx` | `FlatList` + `TouchableOpacity` cards — same layout | Small |
+| `AgentEditor.jsx` | `ScrollView` form — button picker already used (no `<select>`) | Small |
+| `ToolSelector.jsx` | Same toggle switch component — already custom (no `<input type="checkbox">`) | Trivial |
+| `FileManager.jsx` | `View` rows — controls already always-visible (no `group-hover`) | Trivial |
+
+### 3.4 What's Web-Only (needs mobile equivalent)
+
+| Web Feature | Mobile Replacement |
+|---|---|
+| `window.speechSynthesis` | `expo-speech` |
+| `<iframe>` YouTube embeds | `react-native-youtube-iframe` |
+| Google Fonts `<link>` | `expo-font` with Figtree loaded at app start |
+| Vite proxy (`/api` → localhost:3001) | Direct URL to Tailscale IP |
+| `localStorage` | `expo-secure-store` |
+| CSS custom properties (`var(--color-*)`) | Theme object from `useTheme` context |
+| NativeWind handles Tailwind classes | Install `nativewind` + configure `babel.config.js` |
+
+### 3.5 Mobile-Specific Considerations
 
 - **Connection settings** — First-launch setup screen: enter Tailscale IP and auth token.
 - **Background behavior** — Disconnect WebSocket when app backgrounds, reconnect on foreground.
-- **Keyboard handling** — InputBar pushes content up when keyboard appears.
-- **Screen sizes** — Responsive layouts. Phone uses `single` layout by default, tablet can use `two-column`.
+- **Keyboard handling** — InputBar pushes content up when keyboard appears (`KeyboardAvoidingView`).
+- **Screen sizes** — Phone uses `single` layout by default, tablet can use `two-column`.
 - **Push notifications (future)** — If Buddy needs to reach you proactively.
 
 ### Layer 3 Verification
@@ -500,6 +534,7 @@ The mobile app reuses the same patterns, not the same code (React Native compone
 - Send a message from phone — canvas updates on both devices.
 - Switch from wifi to cell service — Tailscale reconnects, Buddy still works.
 - Kill and reopen app — reconnects, previous session still there.
+- Visual parity — light/dark themes, card shadows, chart colors, toggle switches all match the web version.
 
 ---
 
@@ -734,3 +769,5 @@ Expected: Both devices see the canvas update and subtitle.
 **Why send canvas commands before subtitles?** So the visual content is already on screen when Buddy "talks about it." If Buddy says "check this out" and the chart appears at the same time or slightly before, it feels coordinated. If the chart appears after, it feels broken.
 
 **Why server-side tools instead of Claude guessing?** Claude hallucinates URLs, outdated data, and wrong facts. Server-side tools (YouTube search, web search, APIs) return real, current data. Claude decides *what* to search for; the tool returns *what actually exists*.
+
+**Why cross-platform parity from the start?** Every web-only CSS feature (Grid, backdrop-blur, @keyframes, `<table>`, `<select>`) becomes a rewrite when building the mobile app. By constraining the web client to only use patterns that React Native/NativeWind supports — flexbox layouts, JS-driven animations, custom components instead of native form elements — the mobile app becomes a thin wrapper around the same logic rather than a parallel codebase. Victory charts, toggle switches, button pickers, and flex-row tables all work identically on both platforms.

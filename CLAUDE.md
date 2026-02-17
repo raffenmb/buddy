@@ -16,9 +16,10 @@ The roadmap lives in `buddy-implementation-plan.md`. It defines five layers:
 ## Tech Stack
 
 - **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `yt-search`
-- **Frontend:** React 18 with Vite, Tailwind CSS, Recharts
+- **Frontend:** React 18 with Vite, Tailwind CSS 4, Victory (charts)
 - **State:** React Context + useReducer (command/reducer pattern)
 - **TTS:** Browser Speech API (to be replaced with ElevenLabs/OpenAI in Layer 4)
+- **Theme:** Light mode default with dark mode toggle (Figtree font, pastel/soft design system)
 - **No TypeScript** — vanilla JS (.jsx/.js files)
 
 ## Commands
@@ -58,13 +59,17 @@ No automated test framework is configured. Testing is manual (see test scenarios
 - `server/session.js` — In-memory conversation history (SQLite in Layer 2)
 
 **Key client modules:**
-- `client/src/context/BuddyState.jsx` — Global state (useReducer): avatar, subtitle, canvas, input, connection. Includes element ID deduplication.
-- `client/src/components/Avatar.jsx` — Fixed bottom-left, two-frame mouth toggle (150ms interval), subtitle display, browser TTS synced to speech end event
-- `client/src/components/Canvas.jsx` — Fixed scrollable region with modes: ambient, content, media, clear. 5 layout modes.
-- `client/src/components/InputBar.jsx` — Text input, POST on enter, disabled while processing
+- `client/src/context/BuddyState.jsx` — Global state (useReducer): avatar, subtitle, canvas, input, connection, admin stack nav. Includes element ID deduplication.
+- `client/src/components/TopBar.jsx` — Agent name, connection dot, theme toggle, admin gear button
+- `client/src/components/Avatar.jsx` — Bottom-left, two-frame mouth toggle (150ms interval), JS-driven bob animation (requestAnimationFrame), subtitle display, browser TTS
+- `client/src/components/Canvas.jsx` — Scrollable region with modes: ambient, content, media, clear. 5 flexbox-only layouts.
+- `client/src/components/InputBar.jsx` — Pill-shaped input with circular send button
 - `client/src/hooks/useWebSocket.js` — WS connection, message routing, reconnect with exponential backoff
+- `client/src/hooks/useTheme.jsx` — ThemeProvider + useTheme hook, dark mode toggle, persists to localStorage
+- `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
 - `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types
-- `client/src/components/canvas-elements/` — 7 components: Card, Chart (Recharts), DataTable, TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification
+- `client/src/components/canvas-elements/` — 7 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification
+- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches), FileManager
 
 ## Environment
 
@@ -84,3 +89,33 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 - **Subtitle replaces previous** — never accumulate; old subtitle clears when user sends a new message
 - **Canvas element IDs auto-deduplicated** — reducer appends `-2`, `-3` etc. on collision
 - **System prompt instructs Buddy** to keep subtitles to 1-3 sentences, use canvas for detailed content, search YouTube for real URLs instead of guessing
+
+## Cross-Platform Parity Rule
+
+**All new frontend code must be written for 1:1 web/mobile parity.** The web client (`client/`) and future React Native app (`mobile/`) should share as much logic as possible and use only patterns that work on both platforms.
+
+**Allowed:**
+- Flexbox for all layout (`flex`, `flex-row`, `flex-col`, `flex-wrap`) — React Native's only layout engine
+- Inline `style={{}}` for dynamic values, CSS custom properties via `var()` for theming
+- JS-driven animations (`requestAnimationFrame`, `setInterval`, state-based) — maps to React Native `Animated`
+- Victory charts (`victory` on web, `victory-native` on mobile)
+- Custom button/toggle components instead of native form elements
+- `rounded-*`, `text-*`, `font-*`, `p-*`, `m-*`, `gap-*` Tailwind utilities (NativeWind compatible)
+
+**Banned (do not introduce):**
+- `backdrop-blur` — not supported in React Native
+- CSS Grid (`grid-cols-*`, `grid-rows-*`) — use flexbox with `flex-wrap` instead
+- `@keyframes` / CSS animations — use JS-driven animations instead
+- `<style>` tags in JSX — use Tailwind classes or inline styles
+- `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<td>`, `<th>` — use flex rows instead
+- `<select>`, `<option>` — use custom button pickers
+- `<input type="checkbox">` — use custom toggle switch components
+- `group-hover:` — not supported in React Native; use always-visible controls
+- `hover:` as primary interaction — use `active:` states; `hover:` only as progressive enhancement
+- `position: fixed` — use flex column layout with absolute positioning within containers
+
+**Known web-only divergences (documented, acceptable):**
+- `<iframe>` for YouTube embeds — will use `react-native-youtube-iframe` on mobile
+- `window.speechSynthesis` — will use `expo-speech` on mobile
+- Vite proxy for `/api` — mobile will connect directly to server URL
+- Google Fonts `<link>` — mobile will use `expo-font`

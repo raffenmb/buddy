@@ -35,18 +35,31 @@ export default function VideoPlayer({
       rel: "0",
     });
     return (
-      <div data-id={id} className="bg-gray-800/80 backdrop-blur rounded-xl p-4 overflow-hidden">
+      <div
+        data-id={id}
+        className="rounded-2xl p-4 overflow-hidden"
+        style={{
+          backgroundColor: "var(--color-bg-surface)",
+          boxShadow: "var(--shadow-card)",
+          border: "1px solid var(--color-border)",
+        }}
+      >
         <div className="relative w-full max-w-4xl mx-auto" style={{ aspectRatio: "16/9" }}>
           <iframe
             src={`https://www.youtube.com/embed/${youtubeId}?${params}`}
-            className="absolute inset-0 w-full h-full rounded-lg"
+            className="absolute inset-0 w-full h-full rounded-xl"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             title={title || "Video"}
           />
         </div>
         {title && (
-          <p className="text-gray-400 text-sm mt-2 text-center">{title}</p>
+          <p
+            className="text-sm mt-2 text-center"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            {title}
+          </p>
         )}
       </div>
     );
@@ -55,11 +68,19 @@ export default function VideoPlayer({
   const displayClass = DISPLAY_CLASSES[display] || DISPLAY_CLASSES.contained;
 
   return (
-    <div data-id={id} className="bg-gray-800/80 backdrop-blur rounded-xl p-4 overflow-hidden">
+    <div
+      data-id={id}
+      className="rounded-2xl p-4 overflow-hidden"
+      style={{
+        backgroundColor: "var(--color-bg-surface)",
+        boxShadow: "var(--shadow-card)",
+        border: "1px solid var(--color-border)",
+      }}
+    >
       {media_type === "video" ? (
         <video
           src={url}
-          className={`rounded-lg ${displayClass}`}
+          className={`rounded-xl ${displayClass}`}
           controls
           autoPlay={autoplay}
           muted
@@ -69,11 +90,16 @@ export default function VideoPlayer({
         <img
           src={url}
           alt={title || ""}
-          className={`rounded-lg ${displayClass}`}
+          className={`rounded-xl ${displayClass}`}
         />
       )}
       {title && (
-        <p className="text-gray-400 text-sm mt-2 text-center">{title}</p>
+        <p
+          className="text-sm mt-2 text-center"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          {title}
+        </p>
       )}
     </div>
   );

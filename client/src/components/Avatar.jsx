@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBuddy } from "../context/BuddyState";
 import { AVATAR_PRESETS } from "../assets/avatars/index.js";
+import useEntryAnimation from "../hooks/useEntryAnimation";
 
 export default function Avatar() {
   const { state, dispatch } = useBuddy();
@@ -8,6 +9,31 @@ export default function Avatar() {
   const [showTalkFrame, setShowTalkFrame] = useState(false);
   const talkTimerRef = useRef(null);
   const mouthIntervalRef = useRef(null);
+  const bobRef = useRef(null);
+  const bobYRef = useRef(0);
+  const bobFrameRef = useRef(null);
+  const [thinkingDots, setThinkingDots] = useState(".");
+  const thinkingRef = useRef(null);
+  const { ref: entryRef, entered } = useEntryAnimation(0);
+
+  // Bob animation via requestAnimationFrame
+  useEffect(() => {
+    let startTime = null;
+    function animate(timestamp) {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const y = Math.sin((elapsed / 3000) * Math.PI * 2) * -4;
+      bobYRef.current = y;
+      if (bobRef.current) {
+        bobRef.current.style.transform = `translateY(${y}px)`;
+      }
+      bobFrameRef.current = requestAnimationFrame(animate);
+    }
+    bobFrameRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (bobFrameRef.current) cancelAnimationFrame(bobFrameRef.current);
+    };
+  }, []);
 
   // Mouth toggle animation while talking
   useEffect(() => {
@@ -25,10 +51,26 @@ export default function Avatar() {
     };
   }, [avatar.isTalking]);
 
-  // TTS + talk duration — speak subtitle and sync mouth animation
+  // Thinking dots animation via setInterval
+  useEffect(() => {
+    if (input.isProcessing && !subtitle.visible) {
+      thinkingRef.current = setInterval(() => {
+        setThinkingDots((prev) => {
+          if (prev === ".") return "..";
+          if (prev === "..") return "...";
+          return ".";
+        });
+      }, 500);
+    } else {
+      clearInterval(thinkingRef.current);
+      setThinkingDots(".");
+    }
+    return () => clearInterval(thinkingRef.current);
+  }, [input.isProcessing, subtitle.visible]);
+
+  // TTS + talk duration
   useEffect(() => {
     if (subtitle.visible && subtitle.text) {
-      // Cancel any ongoing speech
       window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(subtitle.text);
@@ -45,7 +87,6 @@ export default function Avatar() {
 
       window.speechSynthesis.speak(utterance);
 
-      // Fallback timer in case onend doesn't fire
       const fallbackDuration = Math.min(
         Math.max((subtitle.text.length / 15) * 1000, 1000),
         15000
@@ -61,62 +102,58 @@ export default function Avatar() {
     };
   }, [subtitle.visible, subtitle.text, dispatch]);
 
-  // Look up avatar preset from agent state, fallback to buddy
   const preset = AVATAR_PRESETS[agent.avatar] || AVATAR_PRESETS.buddy;
   const avatarSrc = showTalkFrame ? preset.talking : preset.idle;
 
   return (
     <div
-      className="fixed z-50 flex items-end gap-3"
-      style={{ bottom: "80px", left: "16px" }}
+      ref={entryRef}
+      data-entered={entered}
+      className="enter-fade-up absolute bottom-4 left-4 z-50 flex items-end gap-3"
     >
-      {/* Avatar image with idle bob animation */}
-      <div className="avatar-bob flex-shrink-0 flex flex-col items-center">
+      {/* Avatar image with JS bob animation */}
+      <div ref={bobRef} className="flex-shrink-0 flex flex-col items-center">
         <img
           src={avatarSrc}
           alt={agent.name}
-          style={{ width: "120px", height: "120px" }}
+          style={{ width: "96px", height: "96px" }}
           draggable={false}
         />
-        <span className="text-white/70 text-xs mt-1">{agent.name}</span>
+        <span
+          className="text-xs mt-1 font-medium"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          {agent.name}
+        </span>
       </div>
 
       {/* Subtitle or thinking indicator */}
       {subtitle.visible && subtitle.text ? (
-        <div className="subtitle-enter bg-black/70 backdrop-blur rounded-lg px-4 py-2 text-white max-w-md">
+        <div
+          className="enter-fade-left rounded-2xl px-4 py-2 max-w-md text-sm"
+          data-entered={entered}
+          style={{
+            backgroundColor: "var(--color-bg-surface)",
+            boxShadow: "var(--shadow-elevated)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
+        >
           {subtitle.text}
         </div>
       ) : input.isProcessing ? (
-        <div className="bg-black/70 backdrop-blur rounded-lg px-4 py-2 text-white max-w-md">
-          <span className="thinking-dots">...</span>
+        <div
+          className="rounded-2xl px-4 py-2 max-w-md text-sm font-medium"
+          style={{
+            backgroundColor: "var(--color-bg-surface)",
+            boxShadow: "var(--shadow-elevated)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {thinkingDots}
         </div>
       ) : null}
-
-      {/* Inline styles for animations */}
-      <style>{`
-        .avatar-bob {
-          animation: float 3s ease-in-out infinite;
-        }
-
-        @keyframes float {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-
-        .thinking-dots {
-          display: inline-block;
-          animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 0.3; }
-          50% { opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

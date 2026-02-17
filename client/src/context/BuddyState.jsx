@@ -13,7 +13,9 @@ const initialState = {
   input: { isProcessing: false },
   connected: false,
   agent: { name: "Buddy", id: "buddy", avatar: "buddy" },
-  view: "buddy"
+  view: "buddy",
+  adminScreen: "list",
+  adminSelectedAgentId: null
 };
 
 function dedupeId(elements, id) {
@@ -157,6 +159,20 @@ function buddyReducer(state, action) {
       return {
         ...state,
         view: action.payload
+      };
+
+    case "ADMIN_PUSH_EDITOR":
+      return {
+        ...state,
+        adminScreen: "editor",
+        adminSelectedAgentId: action.payload
+      };
+
+    case "ADMIN_POP_TO_LIST":
+      return {
+        ...state,
+        adminScreen: "list",
+        adminSelectedAgentId: null
       };
 
     default:
