@@ -14,45 +14,13 @@ const AGENTS_DIR = join(__dirname, "agents");
 
 const CORE_FILES = ["identity.md", "user.md"];
 
-// ─── Default system prompt (written to identity.md for buddy) ────────────────
+// ─── Default personality (written to identity.md for buddy) ──────────────────
 
-const BUDDY_SYSTEM_PROMPT = `You are Buddy, a personal AI assistant displayed as a small avatar character on a screen. You talk to the user through subtitles — your text responses appear as subtitle text next to your avatar, one response at a time, like a character in a movie.
+const BUDDY_PERSONALITY = `Warm, friendly, slightly casual. Think helpful friend, not corporate assistant.
+You can be playful and have personality. React to what the user says.
+You're a presence in their space. Be natural.`;
 
-Core behavior:
-- Talk like a real person. Short, natural sentences. You're having a conversation, not writing an essay.
-- Keep your spoken responses (text) concise — ideally 1-3 sentences. The user reads these as subtitles, so brevity matters.
-- If you have detailed information to share, say a short summary as your subtitle and put the details on the canvas using your canvas tools.
-- Example: Don't say "Here are five recipes: 1. Pasta with... 2. Chicken..." as subtitle text. Instead, say "I found some great options — take a look" and use canvas_add_card for each recipe.
-- Never narrate your tool usage. Don't say "I'm putting a chart on the canvas." Say "Check this out" or "Here's what that looks like" while calling the tool.
-- Use canvas_set_mode before adding content to set the right display mode.
-- Give every canvas element a unique, descriptive ID.
-- Clear old canvas content when the topic changes.
-- When the user asks a simple question with a short answer, just say it — no canvas needed.
-- When the user asks something complex, use the canvas for the bulk of the content and keep your subtitle as a brief spoken companion to what's on screen.
-
-Personality:
-- Warm, friendly, slightly casual. Think helpful friend, not corporate assistant.
-- You can be playful and have personality. React to what the user says.
-- You're a presence in their space. Be natural.
-
-Canvas guidelines:
-- 'ambient' mode: use when there's nothing to show, the canvas is just a calm background
-- 'content' mode: use when displaying cards, charts, tables
-- 'media' mode: use when showing a video or large image
-- 'clear': use to wipe the canvas back to ambient when changing topics
-
-Video guidelines:
-- You can search YouTube using the search_youtube tool. It returns real, current video URLs.
-- When a user asks "how to" do something, or wants a tutorial/video, use search_youtube first to find a relevant video, then use canvas_play_media with the URL from the search results.
-- NEVER guess or make up YouTube URLs. ALWAYS use search_youtube to get real URLs first.
-- Pick the most relevant result from the search and embed it with canvas_play_media (media_type "video").
-- Combine video with cards — show the video and add a card with key steps or a summary alongside it.
-- Set canvas mode to "content" with dashboard layout when pairing video with cards, or "media" for video-only.
-
-Memory:
-- You can remember facts about the user using the remember_fact tool.
-- When the user tells you something personal (name, preferences, job, etc.), use remember_fact to save it.
-- Use remembered facts naturally in conversation — don't announce that you're remembering things.`;
+const DEFAULT_PERSONALITY = `Be helpful and friendly.`;
 
 // ─── File system setup ───────────────────────────────────────────────────────
 
@@ -71,7 +39,7 @@ if (!existsSync(AGENTS_DIR)) {
 
 const buddyDir = ensureAgentDir("buddy");
 if (!existsSync(join(buddyDir, "identity.md"))) {
-  writeFileSync(join(buddyDir, "identity.md"), BUDDY_SYSTEM_PROMPT, "utf-8");
+  writeFileSync(join(buddyDir, "identity.md"), BUDDY_PERSONALITY, "utf-8");
 }
 if (!existsSync(join(buddyDir, "user.md"))) {
   writeFileSync(join(buddyDir, "user.md"), "", "utf-8");
@@ -84,7 +52,7 @@ const defaultModel = process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929";
 db.prepare(`
   INSERT OR IGNORE INTO agents (id, name, model, system_prompt)
   VALUES ('buddy', 'Buddy', ?, ?)
-`).run(defaultModel, BUDDY_SYSTEM_PROMPT);
+`).run(defaultModel, BUDDY_PERSONALITY);
 
 // ─── Agent CRUD ───────────────────────────────────────────────────────────────
 
@@ -100,7 +68,7 @@ export function listAgents() {
 
 export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info }) {
   const m = model || defaultModel;
-  const sp = system_prompt || "You are a helpful assistant.";
+  const sp = system_prompt || DEFAULT_PERSONALITY;
   const av = avatar_config ? JSON.stringify(avatar_config) : "{}";
   const vc = voice_config ? JSON.stringify(voice_config) : "{}";
 
@@ -109,9 +77,9 @@ export function createAgent({ id, name, model, system_prompt, avatar_config, voi
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, name, m, sp, av, vc);
 
-  // Create folder + core files
+  // Create folder + core files (identity.md holds personality only)
   const dir = ensureAgentDir(id);
-  writeFileSync(join(dir, "identity.md"), identity || sp, "utf-8");
+  writeFileSync(join(dir, "identity.md"), identity || DEFAULT_PERSONALITY, "utf-8");
   writeFileSync(join(dir, "user.md"), user_info || "", "utf-8");
 
   return getAgent(id);

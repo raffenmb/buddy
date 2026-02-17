@@ -5,11 +5,21 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import yts from "yt-search";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import tools from "./tools.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
 import { getAgent, getMemories, setMemory, getIdentity, getUserInfo } from "./agents.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const anthropic = new Anthropic();
+
+// Cache the base template — read once on startup
+const systemPromptTemplate = readFileSync(
+  join(__dirname, "system-prompt.md"),
+  "utf-8"
+);
 
 async function executeYouTubeSearch(input) {
   try {
@@ -30,26 +40,31 @@ async function executeYouTubeSearch(input) {
 }
 
 /**
- * Build the full system prompt from identity.md + user.md files + memories.
+ * Build the full system prompt from base template + per-agent personality,
+ * user info, and memories.
  */
 function buildSystemPrompt(agent, memories) {
-  // Read identity from file system instead of DB field
-  let prompt = getIdentity(agent.id) || agent.system_prompt;
+  const personality = getIdentity(agent.id) || "Be helpful and friendly.";
 
-  // Append user info from file if non-empty
   const userInfo = getUserInfo(agent.id);
-  if (userInfo && userInfo.trim()) {
-    prompt += "\n\n## About the user:\n" + userInfo;
-  }
+  const userInfoSection = userInfo && userInfo.trim()
+    ? "## About the user\n" + userInfo
+    : "";
 
+  let memoriesSection = "";
   if (memories.length > 0) {
-    prompt += "\n\n## What you remember about the user:\n";
+    memoriesSection = "## What you remember about the user\n";
     for (const mem of memories) {
-      prompt += `- ${mem.key}: ${mem.value}\n`;
+      memoriesSection += `- ${mem.key}: ${mem.value}\n`;
     }
   }
 
-  return prompt;
+  return systemPromptTemplate
+    .replace("{{name}}", agent.name)
+    .replace("{{personality}}", personality)
+    .replace("{{user_info}}", userInfoSection)
+    .replace("{{memories}}", memoriesSection)
+    .trim();
 }
 
 /**

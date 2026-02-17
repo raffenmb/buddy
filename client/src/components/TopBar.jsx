@@ -1,9 +1,48 @@
+import { useState, useEffect, useRef } from "react";
 import { useBuddy } from "../context/BuddyState";
 import { useTheme } from "../hooks/useTheme";
+import { apiFetch } from "../lib/api";
 
 export default function TopBar() {
   const { state, dispatch } = useBuddy();
   const { theme, toggleTheme } = useTheme();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [agents, setAgents] = useState([]);
+  const pickerRef = useRef(null);
+
+  // Close picker on outside tap
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function handlePress(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePress);
+    return () => document.removeEventListener("mousedown", handlePress);
+  }, [pickerOpen]);
+
+  async function togglePicker() {
+    if (pickerOpen) {
+      setPickerOpen(false);
+      return;
+    }
+    try {
+      const list = await apiFetch("/api/agents");
+      setAgents(list);
+    } catch {
+      setAgents([]);
+    }
+    setPickerOpen(true);
+  }
+
+  function switchAgent(agent) {
+    setPickerOpen(false);
+    if (agent.id === state.agent.id) return;
+    dispatch({ type: "SET_AGENT", payload: { id: agent.id, name: agent.name, avatar: agent.avatar || "buddy" } });
+    dispatch({ type: "CLEAR_SUBTITLE" });
+    dispatch({ type: "CANVAS_SET_MODE", payload: { mode: "clear" } });
+  }
 
   function openAdmin() {
     dispatch({ type: "SET_VIEW", payload: "admin" });
@@ -18,22 +57,84 @@ export default function TopBar() {
         boxShadow: "var(--shadow-card)",
       }}
     >
-      {/* Left: agent name + connection dot */}
-      <div className="flex items-center gap-2">
-        <span
-          className="font-semibold text-base"
-          style={{ color: "var(--color-text-primary)" }}
+      {/* Left: agent name (tappable) + connection dot */}
+      <div className="relative" ref={pickerRef}>
+        <button
+          onClick={togglePicker}
+          className="flex items-center gap-2"
+          style={{ background: "none", border: "none", padding: 0 }}
         >
-          {state.agent.name}
-        </span>
-        <span
-          className="w-2 h-2 rounded-full"
-          style={{
-            backgroundColor: state.connected
-              ? "var(--color-secondary)"
-              : "var(--color-text-muted)",
-          }}
-        />
+          <span
+            className="font-semibold text-base"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            {state.agent.name}
+          </span>
+          {/* Chevron */}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-text-muted)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transform: pickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 150ms ease",
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{
+              backgroundColor: state.connected
+                ? "var(--color-secondary)"
+                : "var(--color-text-muted)",
+            }}
+          />
+        </button>
+
+        {/* Agent picker dropdown */}
+        {pickerOpen && (
+          <div
+            className="absolute left-0 mt-2 rounded-xl py-1 min-w-40"
+            style={{
+              backgroundColor: "var(--color-bg-surface)",
+              border: "1px solid var(--color-border)",
+              boxShadow: "var(--shadow-card)",
+              zIndex: 50,
+            }}
+          >
+            {agents.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => switchAgent(a)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                style={{
+                  color: a.id === state.agent.id
+                    ? "var(--color-accent)"
+                    : "var(--color-text-primary)",
+                  backgroundColor: "transparent",
+                  fontWeight: a.id === state.agent.id ? 600 : 400,
+                  border: "none",
+                }}
+              >
+                {a.name}
+              </button>
+            ))}
+            {agents.length === 0 && (
+              <span
+                className="block px-4 py-2 text-sm"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                No agents found
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right: theme toggle + admin gear */}

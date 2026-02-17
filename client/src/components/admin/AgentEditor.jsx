@@ -200,18 +200,19 @@ export default function AgentEditor({ agentId, onDeleted }) {
         </div>
       </div>
 
-      {/* Identity */}
+      {/* Personality */}
       <div>
         <label
           className="block text-sm font-medium mb-1"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          Identity (identity.md)
+          Personality
         </label>
         <textarea
           value={identity}
           onChange={(e) => setIdentity(e.target.value)}
-          rows={10}
+          rows={6}
+          placeholder="Describe this agent's personality and tone..."
           className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none resize-y"
           style={{
             backgroundColor: "var(--color-bg-raised)",
