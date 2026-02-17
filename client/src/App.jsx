@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BuddyProvider, useBuddy } from "./context/BuddyState";
 import { ThemeProvider } from "./hooks/useTheme";
+import { AlertProvider } from "./components/AlertModal";
 import { apiFetch } from "./lib/api";
 import Canvas from "./components/Canvas";
 import Avatar from "./components/Avatar";
@@ -41,9 +42,11 @@ function BuddyApp() {
 export default function App() {
   return (
     <ThemeProvider>
-      <BuddyProvider>
-        <BuddyApp />
-      </BuddyProvider>
+      <AlertProvider>
+        <BuddyProvider>
+          <BuddyApp />
+        </BuddyProvider>
+      </AlertProvider>
     </ThemeProvider>
   );
 }

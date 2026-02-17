@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useAlert } from "../AlertModal";
 import { apiFetch } from "../../lib/api";
 
 const BUILT_IN_TOOLS = [
@@ -33,6 +34,7 @@ function ToggleSwitch({ checked, onChange }) {
 }
 
 export default function ToolSelector({ enabledTools, onChange }) {
+  const { showAlert } = useAlert();
   const [skills, setSkills] = useState([]);
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -116,7 +118,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
         onChange(onlyStd ? null : next);
       }
     } catch (err) {
-      alert("Failed to delete skill: " + err.message);
+      showAlert("Failed to delete skill: " + err.message);
     }
   }
 

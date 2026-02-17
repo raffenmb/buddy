@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useBuddy } from "../../context/BuddyState";
+import { useAlert } from "../AlertModal";
 import { apiFetch } from "../../lib/api";
 import { AVATAR_PRESETS } from "../../assets/avatars/index.js";
 import ToolSelector from "./ToolSelector";
@@ -12,6 +13,7 @@ const MODEL_OPTIONS = [
 
 export default function AgentEditor({ agentId, onDeleted }) {
   const { state, dispatch } = useBuddy();
+  const { showAlert, showConfirm } = useAlert();
   const [agent, setAgent] = useState(null);
   const [identity, setIdentity] = useState("");
   const [userInfo, setUserInfo] = useState("");
@@ -83,19 +85,20 @@ export default function AgentEditor({ agentId, onDeleted }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      alert("Save failed: " + err.message);
+      showAlert("Save failed: " + err.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+    const confirmed = await showConfirm(`Delete agent "${name}"? This cannot be undone.`);
+    if (!confirmed) return;
     try {
       await apiFetch(`/api/agents/${agentId}`, { method: "DELETE" });
       onDeleted();
     } catch (err) {
-      alert(err.message);
+      showAlert(err.message);
     }
   }
 

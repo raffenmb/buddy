@@ -129,3 +129,9 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 - `window.speechSynthesis` — will use `expo-speech` on mobile
 - Vite proxy for `/api` — mobile will connect directly to server URL
 - Google Fonts `<link>` — mobile will use `expo-font`
+- Skill folder upload (drag-drop, directory picker, `webkitdirectory`) — **desktop-only feature**. Users won't build/share skill folders from a phone. Future mobile path: a skill marketplace where users browse and enable pre-built skills.
+
+**Cross-platform alert/confirm:**
+- Never use browser `alert()` or `confirm()` — use `useAlert()` hook from `components/AlertModal.jsx`
+- `showAlert(message)` replaces `alert()`, `showConfirm(message)` replaces `confirm()` (returns a promise resolving to `true`/`false`)
+- Renders a themed flexbox modal that works identically on web and React Native

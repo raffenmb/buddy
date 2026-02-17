@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useBuddy } from "../../context/BuddyState";
+import { useAlert } from "../AlertModal";
 import { apiFetch } from "../../lib/api";
 import { AVATAR_PRESETS } from "../../assets/avatars/index.js";
 
 export default function AgentList() {
   const { dispatch } = useBuddy();
+  const { showAlert } = useAlert();
   const [agents, setAgents] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newId, setNewId] = useState("");
@@ -39,7 +41,7 @@ export default function AgentList() {
       await loadAgents();
       dispatch({ type: "ADMIN_PUSH_EDITOR", payload: id });
     } catch (err) {
-      alert(err.message);
+      showAlert(err.message);
     }
   }
 
