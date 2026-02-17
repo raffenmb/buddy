@@ -120,15 +120,9 @@ export default function Avatar() {
         <img
           src={avatarSrc}
           alt={agent.name}
-          style={{ width: "96px", height: "96px" }}
+          style={{ width: "144px", height: "144px" }}
           draggable={false}
         />
-        <span
-          className="text-xs mt-1 font-medium"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          {agent.name}
-        </span>
       </div>
 
       {/* Subtitle or thinking indicator */}
