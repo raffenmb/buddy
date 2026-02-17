@@ -45,8 +45,8 @@ No automated test framework is configured. Testing is manual (see test scenarios
 
 **Data flow:**
 1. User types → `POST /api/prompt` → server appends to session history
-2. Server calls Claude API with full history + 12 tool definitions (11 canvas + YouTube search)
-3. Tool use loop runs until `stop_reason === "end_turn"`. Server-side tools (YouTube search) execute and return real data. Canvas tools return `{ status: "rendered" }`.
+2. Server calls Claude API with full history + tool definitions (10 canvas always-on + toggleable non-canvas tools)
+3. Tool use loop runs until `stop_reason === "end_turn"`. Server-side tools (YouTube search, remember_fact) execute and return real data. Canvas tools return `{ status: "rendered" }`.
 4. Response Splitter separates tool calls (canvas) from text (subtitle)
 5. Canvas commands broadcast via WebSocket **first**, then subtitle — so visuals appear before Buddy "speaks"
 6. Frontend CommandRouter maps `canvas_*` commands → reducer actions → component re-renders
@@ -54,7 +54,7 @@ No automated test framework is configured. Testing is manual (see test scenarios
 **Key server modules:**
 - `server/index.js` — Express + WebSocket entry point
 - `server/claude-client.js` — Claude API integration with tool use loop + YouTube search execution
-- `server/tools.js` — Canvas + server-side tool definitions (12 tools)
+- `server/tools.js` — Canvas + server-side tool definitions (10 canvas + 2 non-canvas)
 - `server/response-splitter.js` — Separates subtitle text from canvas commands
 - `server/session.js` — In-memory conversation history (SQLite in Layer 2)
 
@@ -69,7 +69,7 @@ No automated test framework is configured. Testing is manual (see test scenarios
 - `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
 - `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types
 - `client/src/components/canvas-elements/` — 7 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification
-- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches), FileManager
+- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches for non-canvas tools only)
 
 ## Environment
 
@@ -83,7 +83,8 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 ## Key Design Constraints
 
 - **Canvas commands before subtitles** — visuals must appear before Buddy "speaks" about them
-- **Canvas tool results return `{ status: "rendered" }`** — display-only. Server-side tools (search_youtube) return real data.
+- **Canvas tools always sent to API** — not toggleable in admin. Non-canvas tools (search_youtube, remember_fact) are toggleable per agent.
+- **Canvas tool results return `{ status: "rendered" }`** — display-only. Server-side tools (search_youtube, remember_fact) return real data.
 - **TTS synced to speech** — mouth animation stops on `speechSynthesis.onend`, with fallback timer
 - **Single session, in-memory** — resets on server restart (SQLite persistence is Layer 2)
 - **Subtitle replaces previous** — never accumulate; old subtitle clears when user sends a new message
