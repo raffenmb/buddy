@@ -81,6 +81,39 @@ EOF
     echo ""
 fi
 
+# ─── Set up Docker sandbox ────────────────────────────────────
+
+echo "Setting up Docker sandbox..."
+
+if ! command -v docker &> /dev/null; then
+    echo "WARNING: Docker is not installed. Sandbox features will be disabled."
+    echo "  macOS:   Install Docker Desktop from https://docker.com/products/docker-desktop"
+    echo "  Linux:   Run 'curl -fsSL https://get.docker.com | sh'"
+    echo "  Windows: Install Docker Desktop from https://docker.com/products/docker-desktop"
+    echo ""
+    echo "You can install Docker later and re-run this script."
+    echo ""
+elif ! docker info &> /dev/null 2>&1; then
+    echo "WARNING: Docker is installed but not running. Sandbox features will be disabled."
+    echo "  Start Docker and re-run this script to enable sandbox."
+    echo ""
+else
+    docker compose up -d --build
+
+    # Seed workspace.json if first run
+    docker exec buddy-sandbox sh -c 'test -f /agent/knowledge/workspace.json || cat > /agent/knowledge/workspace.json << '"'"'SEED_EOF'"'"'
+{
+  "version": 1,
+  "description": "Agent self-managed index of the workspace",
+  "folders": {},
+  "notes": []
+}
+SEED_EOF'
+
+    echo "Docker sandbox is running."
+    echo ""
+fi
+
 # ─── Build the client ──────────────────────────────────────────
 
 echo "Building the client..."

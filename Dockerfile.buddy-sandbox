@@ -1,0 +1,32 @@
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base utilities + tools the agent might need
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    python3 \
+    python3-pip \
+    ripgrep \
+    imagemagick \
+    ffmpeg \
+    zip \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user from day one
+RUN useradd -m -s /bin/bash -u 1000 buddy
+
+# Workspace directories
+RUN mkdir -p /agent/data /agent/knowledge /agent/uploads /agent/temp \
+    && chown -R buddy:buddy /agent
+
+USER buddy
+WORKDIR /agent
+
+# Persistent execution target — stays alive for docker exec
+CMD ["sleep", "infinity"]

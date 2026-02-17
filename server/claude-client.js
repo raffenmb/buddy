@@ -12,6 +12,7 @@ import tools from "./tools.js";
 import { listSkills, getSkillPrompt } from "./skills.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
 import { getAgent, getMemories, setMemory, getIdentity, getUserInfo } from "./agents.js";
+import { handleSandboxTool, SANDBOX_TOOL_NAMES } from "./sandbox/toolHandler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const anthropic = new Anthropic();
@@ -116,9 +117,12 @@ function parseEnabledTools(enabledToolsRaw) {
  *
  * @param {string} userText - The user's input text.
  * @param {string} agentId - The agent to use for this prompt.
+ * @param {Object} [callbacks] - Optional callbacks.
+ * @param {Function} [callbacks.sendFile] - Callback to deliver a file to the user.
+ * @param {boolean} [callbacks.sandboxAvailable] - Whether the Docker sandbox is running.
  * @returns {Promise<{allToolCalls: Array, finalTextContent: string}>}
  */
-export async function processPrompt(userText, agentId = "buddy") {
+export async function processPrompt(userText, agentId = "buddy", callbacks = {}) {
   // 1. Load agent config and memories
   const agent = getAgent(agentId);
   if (!agent) {
@@ -129,13 +133,27 @@ export async function processPrompt(userText, agentId = "buddy") {
   const systemPrompt = buildSystemPrompt(agent, memories);
 
   // 2. Filter tools based on agent's enabled_tools setting
-  //    Canvas tools are always included; only non-canvas tools are toggleable.
-  //    Custom skills are NOT API tools — they're injected into the system prompt.
+  //    - Canvas tools: always included
+  //    - Standard non-canvas tools (search_youtube, remember_fact): included when enabled_tools is null
+  //    - Sandbox tools (shell_exec, etc.): opt-in only — require explicit listing in enabled_tools
+  //    - Custom skills: NOT API tools — injected into system prompt
   let agentTools = tools;
   const enabledTools = parseEnabledTools(agent.enabled_tools);
   if (enabledTools) {
     agentTools = tools.filter(
       (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name)
+    );
+  } else {
+    // null = all standard tools ON, sandbox tools OFF
+    agentTools = tools.filter(
+      (t) => !SANDBOX_TOOL_NAMES.includes(t.name)
+    );
+  }
+
+  // Strip sandbox tools if Docker isn't available
+  if (!callbacks.sandboxAvailable) {
+    agentTools = agentTools.filter(
+      (t) => !SANDBOX_TOOL_NAMES.includes(t.name)
     );
   }
 
@@ -185,6 +203,19 @@ export async function processPrompt(userText, agentId = "buddy") {
             type: "tool_result",
             tool_use_id: toolUse.id,
             content: JSON.stringify({ status: "remembered" }),
+          };
+        }
+        if (SANDBOX_TOOL_NAMES.includes(toolUse.name)) {
+          const result = await handleSandboxTool(
+            toolUse.name,
+            toolUse.input,
+            callbacks.sendFile
+          );
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result.content,
+            ...(result.isError && { is_error: true }),
           };
         }
         return {

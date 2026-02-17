@@ -54,6 +54,14 @@ db.prepare(`
   VALUES ('buddy', 'Buddy', ?, ?)
 `).run(defaultModel, BUDDY_PERSONALITY);
 
+// Ensure Buddy has sandbox tools enabled (idempotent — only sets if currently null)
+const buddyAgent = db.prepare("SELECT enabled_tools FROM agents WHERE id = 'buddy'").get();
+if (!buddyAgent.enabled_tools) {
+  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy'").run(
+    JSON.stringify(["search_youtube", "remember_fact", "shell_exec", "read_file", "write_file", "list_directory", "send_file"])
+  );
+}
+
 // ─── Agent CRUD ───────────────────────────────────────────────────────────────
 
 export function getAgent(id) {

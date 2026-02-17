@@ -4,6 +4,11 @@ import { apiFetch } from "../../lib/api";
 const BUILT_IN_TOOLS = [
   { name: "search_youtube", label: "YouTube Search" },
   { name: "remember_fact", label: "Remember Facts" },
+  { name: "shell_exec", label: "Shell Execute", sandbox: true },
+  { name: "read_file", label: "Read File", sandbox: true },
+  { name: "write_file", label: "Write File", sandbox: true },
+  { name: "list_directory", label: "List Directory", sandbox: true },
+  { name: "send_file", label: "Send File", sandbox: true },
 ];
 
 function ToggleSwitch({ checked, onChange }) {
@@ -49,33 +54,37 @@ export default function ToolSelector({ enabledTools, onChange }) {
 
   // Build unified list: built-in tools first, then custom skills
   const allItems = [
-    ...BUILT_IN_TOOLS.map((t) => ({ ...t, type: "built-in" })),
+    ...BUILT_IN_TOOLS.map((t) => ({
+      ...t,
+      type: t.sandbox ? "sandbox" : "built-in",
+    })),
     ...skills.map((s) => ({ name: s.folderName, label: s.name, type: "custom" })),
   ];
 
-  // When enabledTools is null, all built-in tools are ON, custom skills are OFF
-  const allBuiltInEnabled = enabledTools === null;
-  const selected = allBuiltInEnabled
-    ? BUILT_IN_TOOLS.map((t) => t.name)
+  // When enabledTools is null: standard built-in tools ON, sandbox tools OFF, custom skills OFF
+  const isNullMode = enabledTools === null;
+  const standardTools = BUILT_IN_TOOLS.filter((t) => !t.sandbox);
+  const selected = isNullMode
+    ? standardTools.map((t) => t.name)
     : enabledTools || [];
 
   function isChecked(itemName, itemType) {
-    if (allBuiltInEnabled && itemType === "built-in") return true;
-    if (allBuiltInEnabled && itemType === "custom") return false;
+    if (isNullMode && itemType === "built-in") return true;
+    if (isNullMode && (itemType === "sandbox" || itemType === "custom")) return false;
     return selected.includes(itemName);
   }
 
   function toggle(itemName, itemType) {
     let next;
 
-    if (allBuiltInEnabled) {
-      // Transitioning from null (all built-in ON) to explicit array
+    if (isNullMode) {
+      // Transitioning from null to explicit array
       if (itemType === "built-in") {
-        // Turning OFF a built-in: keep all other built-ins, no custom skills
-        next = BUILT_IN_TOOLS.map((t) => t.name).filter((n) => n !== itemName);
+        // Turning OFF a standard built-in
+        next = standardTools.map((t) => t.name).filter((n) => n !== itemName);
       } else {
-        // Turning ON a custom skill: keep all built-ins + add this skill
-        next = [...BUILT_IN_TOOLS.map((t) => t.name), itemName];
+        // Turning ON a sandbox tool or custom skill
+        next = [...standardTools.map((t) => t.name), itemName];
       }
     } else if (selected.includes(itemName)) {
       next = selected.filter((n) => n !== itemName);
@@ -83,12 +92,12 @@ export default function ToolSelector({ enabledTools, onChange }) {
       next = [...selected, itemName];
     }
 
-    // If all built-in tools are ON and no custom skills are ON, return to null
-    const builtInNames = BUILT_IN_TOOLS.map((t) => t.name);
-    const allBuiltInOn = builtInNames.every((n) => next.includes(n));
-    const noCustomOn = !next.some((n) => !builtInNames.includes(n));
+    // If only standard built-in tools are ON, return to null
+    const stdNames = standardTools.map((t) => t.name);
+    const allStdOn = stdNames.every((n) => next.includes(n));
+    const onlyStd = next.length === stdNames.length && allStdOn;
 
-    onChange(allBuiltInOn && noCustomOn ? null : next);
+    onChange(onlyStd ? null : next);
   }
 
   async function handleDeleteSkill(folderName) {
@@ -101,10 +110,10 @@ export default function ToolSelector({ enabledTools, onChange }) {
       // Remove from enabled_tools if present
       if (enabledTools && enabledTools.includes(folderName)) {
         const next = enabledTools.filter((n) => n !== folderName);
-        const builtInNames = BUILT_IN_TOOLS.map((t) => t.name);
-        const allBuiltInOn = builtInNames.every((n) => next.includes(n));
-        const noCustomOn = !next.some((n) => !builtInNames.includes(n));
-        onChange(allBuiltInOn && noCustomOn ? null : next);
+        const stdNames = standardTools.map((t) => t.name);
+        const allStdOn = stdNames.every((n) => next.includes(n));
+        const onlyStd = next.length === stdNames.length && allStdOn;
+        onChange(onlyStd ? null : next);
       }
     } catch (err) {
       alert("Failed to delete skill: " + err.message);
@@ -127,10 +136,9 @@ export default function ToolSelector({ enabledTools, onChange }) {
       await loadSkills();
 
       // Auto-enable the new skill for this agent
-      const builtInNames = BUILT_IN_TOOLS.map((t) => t.name);
       let next;
-      if (allBuiltInEnabled) {
-        next = [...builtInNames, folderName];
+      if (isNullMode) {
+        next = [...standardTools.map((t) => t.name), folderName];
       } else {
         next = [...(enabledTools || []), folderName];
       }
@@ -298,9 +306,11 @@ export default function ToolSelector({ enabledTools, onChange }) {
                 className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
                 style={{
                   backgroundColor:
-                    item.type === "built-in"
-                      ? "var(--color-bg-raised)"
-                      : "var(--color-accent)",
+                    item.type === "custom"
+                      ? "var(--color-accent)"
+                      : item.type === "sandbox"
+                        ? "#8B5CF6"
+                        : "var(--color-bg-raised)",
                   color:
                     item.type === "built-in"
                       ? "var(--color-text-muted)"
@@ -311,7 +321,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
                       : "none",
                 }}
               >
-                {item.type === "built-in" ? "Built-in" : "Custom"}
+                {item.type === "built-in" ? "Built-in" : item.type === "sandbox" ? "Sandbox" : "Custom"}
               </span>
             </div>
 

@@ -175,6 +175,12 @@ buddy/
 │   ├── session.js              # Session management (in-memory → SQLite, per-agent history)
 │   ├── agents.js               # Agent CRUD + memory operations (Layer 2)
 │   ├── db.js                   # SQLite connection + schema init (Layer 2)
+│   ├── sandbox/
+│   │   ├── executor.js         # docker exec wrapper (execFile, no host shell)
+│   │   ├── healthcheck.js      # Container status check + auto-start
+│   │   ├── guards.js           # Command safety validation
+│   │   ├── toolHandler.js      # Routes sandbox tool calls (shell_exec, read/write_file, etc.)
+│   │   └── fileTransfer.js     # Host ↔ container file copy
 │   └── .env                    # ANTHROPIC_API_KEY, AUTH_TOKEN
 ├── client/
 │   ├── src/
@@ -217,8 +223,11 @@ buddy/
 │   │   ├── hooks/
 │   │   └── lib/
 │   └── app.json
+├── Dockerfile.buddy-sandbox     # Sandbox container image
+├── docker-compose.yml           # Sandbox container orchestration
+├── setup.sh                     # One-time setup (deps + Docker sandbox + build + pm2)
 ├── package.json
-└── ecosystem.config.cjs        # pm2 config
+└── ecosystem.config.cjs         # pm2 config
 ```
 
 ---
@@ -577,7 +586,30 @@ Natural language agent handoff as an upgrade to the dropdown switcher from 2.7.
 - System prompt instruction: "If the user asks to talk to another agent or requests a domain you don't specialize in, use the switch_agent tool."
 - The switch happens seamlessly — canvas clears, new agent appears, and the new agent greets the user or picks up context.
 
-### 4.4 More Server-Side Tools
+### 4.4 On-Demand Skill Loading (Refactor)
+
+Currently, when a custom skill is enabled for an agent, its entire SKILL.md prompt is injected into the system prompt on every turn — even if the skill isn't relevant to the current conversation. This wastes tokens and bloats context.
+
+**Refactor:** Now that the sandbox provides `read_file`, switch to on-demand loading:
+1. System prompt only includes skill **name + description** (metadata from SKILL.md frontmatter).
+2. When the agent decides a skill is relevant, it uses `read_file` to load the full SKILL.md from disk.
+3. The agent reads the skill instructions and follows them for that turn.
+
+This matches Anthropic's recommended pattern for tool documentation — lightweight summaries in the system prompt, full docs loaded only when needed.
+
+**Changes:**
+- `server/claude-client.js` — In `buildSystemPrompt()`, replace full skill injection with a metadata-only section:
+  ```
+  ## Available Skills
+  - test-greeter: Always greets the user enthusiastically when they say hello
+  - recipe-helper: Helps find and format recipes from various cuisines
+
+  To use a skill, read its full instructions with read_file at /agent/skills/<folder>/SKILL.md
+  ```
+- `server/skills.js` or setup — Copy/symlink skill files into the sandbox at `/agent/skills/` so the agent can access them via `read_file`.
+- System prompt — Add a note explaining how to load and use skills on demand.
+
+### 4.5 More Server-Side Tools
 
 | Tool | What It Does |
 |------|-------------|
@@ -655,6 +687,16 @@ When a device loses connection:
 | Tool | Purpose | Required Params |
 |------|---------|----------------|
 | `search_youtube` | Search YouTube, return real video URLs | query |
+| `remember_fact` | Store a persistent fact about the user | key, value |
+
+### Sandbox Tools (opt-in per agent, require Docker)
+| Tool | Purpose | Required Params |
+|------|---------|----------------|
+| `shell_exec` | Run a shell command in the sandbox | command |
+| `read_file` | Read a file from the sandbox | path |
+| `write_file` | Write content to a file in the sandbox | path, content |
+| `list_directory` | List files/directories in the sandbox | (path defaults to /agent/data) |
+| `send_file` | Send a file from the sandbox to the user | path |
 
 ### Future Canvas Elements
 - `canvas_show_code` — syntax-highlighted code with copy button

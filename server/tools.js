@@ -380,6 +380,97 @@ const tools = [
       required: ["key", "value"],
     },
   },
+  {
+    name: "shell_exec",
+    description:
+      "Execute a shell command in the sandbox environment. Use for file operations, running scripts, data processing, installing packages, etc. Working directory is /agent by default. The sandbox has curl, git, jq, python3, imagemagick, ffmpeg, and other utilities.",
+    input_schema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "The shell command to execute.",
+        },
+        cwd: {
+          type: "string",
+          description: "Working directory inside the sandbox (default: /agent).",
+        },
+        timeout: {
+          type: "number",
+          description: "Timeout in milliseconds (default: 30000).",
+        },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "read_file",
+    description:
+      "Read the contents of a file in the sandbox. Path must be within /agent/.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to the file (must be within /agent/).",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "write_file",
+    description:
+      "Write content to a file in the sandbox. Creates parent directories if needed. Path must be within /agent/.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path for the file (must be within /agent/).",
+        },
+        content: {
+          type: "string",
+          description: "Content to write to the file.",
+        },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "list_directory",
+    description:
+      "List files and directories at a given path in the sandbox.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to list (default: /agent/data).",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "send_file",
+    description:
+      "Send a file from the sandbox back to the user through the chat. Use when the user asks for a file you created or processed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the file inside the sandbox to send to the user.",
+        },
+        message: {
+          type: "string",
+          description: "Optional message to accompany the file.",
+        },
+      },
+      required: ["path"],
+    },
+  },
 ];
 
 export default tools;

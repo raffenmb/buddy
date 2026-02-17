@@ -16,6 +16,8 @@ import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
 import { listSkills, validateAndAddSkill, deleteSkill } from "./skills.js";
 import { resetSession } from "./session.js";
+import { ensureSandboxRunning } from "./sandbox/healthcheck.js";
+import { saveBufferToSandbox } from "./sandbox/fileTransfer.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -254,8 +256,18 @@ app.post("/api/prompt", (req, res) => {
         }
       }
 
+      // Callback for send_file tool — delivers files to client via WebSocket
+      const sendFile = (fileData) => {
+        broadcast({
+          type: "file_delivery",
+          filename: fileData.filename,
+          data: fileData.data,
+          message: fileData.message,
+        });
+      };
+
       // Run through Claude with tool-use loop
-      const result = await processPrompt(prompt.trim(), agentId);
+      const result = await processPrompt(prompt.trim(), agentId, { sendFile, sandboxAvailable });
 
       // Split canvas commands and subtitle, broadcast in order
       splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
@@ -288,6 +300,9 @@ const server = createServer(app);
 
 const wss = new WebSocketServer({ server });
 
+// Track sandbox availability (set on startup)
+let sandboxAvailable = false;
+
 wss.on("connection", (ws, req) => {
   // WebSocket auth — check token query param
   if (AUTH_TOKEN) {
@@ -301,6 +316,52 @@ wss.on("connection", (ws, req) => {
 
   console.log("WebSocket client connected");
 
+  // Handle binary messages (file uploads) and text messages
+  ws.on("message", async (data, isBinary) => {
+    // Binary message = file upload
+    if (isBinary) {
+      // Binary protocol not implemented yet — placeholder for future mobile uploads
+      return;
+    }
+
+    // Text messages (JSON)
+    try {
+      const msg = JSON.parse(data.toString());
+
+      if (msg.type === "file_upload" && sandboxAvailable) {
+        const fileBuffer = Buffer.from(msg.data, "base64");
+        const containerPath = saveBufferToSandbox(fileBuffer, msg.filename);
+
+        // Inject file path into a prompt and process it
+        const userMessage = msg.text
+          ? `${msg.text}\n\n[File uploaded to: ${containerPath}]`
+          : `[File uploaded to: ${containerPath}] (filename: ${msg.filename})`;
+
+        broadcast({ type: "processing", status: true });
+
+        const sendFile = (fileData) => {
+          broadcast({
+            type: "file_delivery",
+            filename: fileData.filename,
+            data: fileData.data,
+            message: fileData.message,
+          });
+        };
+
+        try {
+          const result = await processPrompt(userMessage, currentAgentId, { sendFile, sandboxAvailable });
+          splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
+        } catch (err) {
+          console.error("Error processing file upload:", err);
+          broadcast({ type: "subtitle", text: "Sorry, something went wrong processing that file." });
+          broadcast({ type: "processing", status: false });
+        }
+      }
+    } catch {
+      // Not JSON — ignore
+    }
+  });
+
   ws.on("close", () => {
     console.log("WebSocket client disconnected");
   });
@@ -312,7 +373,15 @@ wss.on("connection", (ws, req) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Buddy server running on http://localhost:${PORT}`);
   console.log(`WebSocket server ready on ws://localhost:${PORT}`);
+
+  // Start sandbox container (non-blocking — server works without it)
+  sandboxAvailable = await ensureSandboxRunning();
+  if (sandboxAvailable) {
+    console.log("Sandbox ready — shell_exec, read_file, write_file tools available");
+  } else {
+    console.log("Sandbox unavailable — sandbox tools will be disabled");
+  }
 });
