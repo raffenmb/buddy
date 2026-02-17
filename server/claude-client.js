@@ -68,6 +68,10 @@ function buildSystemPrompt(agent, memories) {
     .trim();
 
   // Append enabled custom skill prompts
+  // TODO: Refactor to on-demand loading once terminal execution is built.
+  // Currently injects full skill prompts (token-inefficient). Target: only inject
+  // name+description metadata here, let the agent read full SKILL.md via bash tool
+  // when relevant. See docs/plans/2026-02-17-custom-skills-design.md.
   const enabledTools = parseEnabledTools(agent.enabled_tools);
   if (enabledTools) {
     const installedSkills = listSkills();

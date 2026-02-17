@@ -75,9 +75,10 @@ No automated test framework is configured. Testing is manual (see test scenarios
 - `server/skills/` — Directory for custom skill folders (each contains `SKILL.md` with YAML frontmatter)
 - `server/skills.js` — Scans, validates, and manages custom skills (CRUD + YAML frontmatter parsing)
 - Skills use Claude Code's `SKILL.md` format: YAML frontmatter with `name:` and `description:`, followed by a markdown prompt
-- When enabled on an agent, skill prompts are appended to the system prompt sent to Claude
 - `enabled_tools` on each agent holds both built-in tool names and skill folder names
 - `null` = all built-in tools ON, custom skills OFF. Explicit array = only listed items ON.
+- **Current state:** Full skill prompts injected into system prompt (temporary, token-inefficient)
+- **Planned refactor:** Once terminal execution is built, switch to on-demand loading — only name/description in system prompt, agent reads full SKILL.md via bash tool when relevant (matches Anthropic's recommended pattern, see design doc)
 
 ## Environment
 
