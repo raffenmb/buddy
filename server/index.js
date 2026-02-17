@@ -14,6 +14,7 @@ import { dirname, join } from "path";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
+import { listSkills, validateAndAddSkill, deleteSkill } from "./skills.js";
 import { resetSession } from "./session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,41 @@ app.delete("/api/agents/:id/files/:filename", (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// ─── Skills Routes ───────────────────────────────────────────────────────────
+
+app.get("/api/skills", (req, res) => {
+  res.json(listSkills());
+});
+
+app.post("/api/skills", (req, res) => {
+  const { folderName, content } = req.body;
+
+  if (!folderName || typeof folderName !== "string") {
+    return res.status(400).json({ error: "folderName is required" });
+  }
+
+  if (!content || typeof content !== "string") {
+    return res.status(400).json({
+      error: "This folder doesn't contain a SKILL.md file. Each skill needs a SKILL.md with a name and description in the frontmatter.",
+    });
+  }
+
+  const result = validateAndAddSkill(folderName.trim(), content);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.status(201).json({ status: "created", folderName: folderName.trim() });
+});
+
+app.delete("/api/skills/:folderName", (req, res) => {
+  const result = deleteSkill(req.params.folderName);
+  if (!result.success) {
+    return res.status(404).json({ error: result.error });
+  }
+  res.json({ status: "deleted" });
 });
 
 // ─── Session Routes ───────────────────────────────────────────────────────────
