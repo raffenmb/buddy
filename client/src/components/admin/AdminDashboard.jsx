@@ -37,7 +37,7 @@ export default function AdminDashboard() {
             <path d="M19 12H5" />
             <path d="M12 19l-7-7 7-7" />
           </svg>
-          {adminScreen === "editor" ? "Back" : "Back to Buddy"}
+          {adminScreen === "editor" ? "Back" : "Back to Chat"}
         </button>
         <h1
           className="text-lg font-semibold"

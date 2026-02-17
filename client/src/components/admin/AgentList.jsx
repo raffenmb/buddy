@@ -78,12 +78,6 @@ export default function AgentList() {
                 >
                   {a.name}
                 </div>
-                <div
-                  className="text-xs truncate"
-                  style={{ color: "var(--color-text-muted)" }}
-                >
-                  {a.id}
-                </div>
               </div>
               {/* Chevron right */}
               <svg

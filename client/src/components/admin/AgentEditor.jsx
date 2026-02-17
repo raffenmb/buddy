@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useBuddy } from "../../context/BuddyState";
 import { apiFetch } from "../../lib/api";
 import { AVATAR_PRESETS } from "../../assets/avatars/index.js";
 import ToolSelector from "./ToolSelector";
@@ -11,6 +12,7 @@ const MODEL_OPTIONS = [
 ];
 
 export default function AgentEditor({ agentId, onDeleted }) {
+  const { state, dispatch } = useBuddy();
   const [agent, setAgent] = useState(null);
   const [identity, setIdentity] = useState("");
   const [userInfo, setUserInfo] = useState("");
@@ -75,6 +77,10 @@ export default function AgentEditor({ agentId, onDeleted }) {
           body: { content: userInfo },
         }),
       ]);
+      // Update chat screen if editing the active agent
+      if (agentId === state.agent.id) {
+        dispatch({ type: "SET_AGENT", payload: { name, avatar } });
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
