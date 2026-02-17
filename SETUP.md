@@ -17,37 +17,12 @@ This guide walks you through setting up Buddy on your own server from scratch. N
 
 Before starting, make sure you have:
 
-1. **A computer to run the server** — any always-on machine (old laptop, desktop, Raspberry Pi, cloud VPS). Linux or Mac recommended; Windows works with WSL.
+1. **A computer to run the server** — any always-on machine (old laptop, desktop, Raspberry Pi, cloud VPS). Linux (Ubuntu/Debian) or Mac recommended.
 2. **An Anthropic API key** — this is how Buddy talks to Claude. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys). You'll need to add a payment method — API calls cost a few cents per conversation.
 
 ---
 
-## Step 1: Install Node.js
-
-Buddy runs on Node.js. Check if you already have it:
-
-```bash
-node -v
-```
-
-If you see a version number (v18 or higher), skip to Step 2.
-
-**To install Node.js:**
-
-- **Ubuntu/Debian Linux:**
-  ```bash
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-  sudo apt install -y nodejs
-  ```
-- **Mac:**
-  ```bash
-  brew install node
-  ```
-- **Windows:** Download from [nodejs.org](https://nodejs.org) (LTS version), or use WSL and follow the Linux instructions.
-
----
-
-## Step 2: Install Git
+## Step 1: Install Git (if you don't have it)
 
 Check if you have Git:
 
@@ -59,38 +34,36 @@ If not installed:
 
 - **Ubuntu/Debian:** `sudo apt install -y git`
 - **Mac:** `xcode-select --install` (or `brew install git`)
-- **Windows:** Download from [git-scm.com](https://git-scm.com)
 
 ---
 
-## Step 3: Clone Buddy
+## Step 2: Clone Buddy and Run Setup
 
 ```bash
 git clone https://github.com/raffenmb/buddy.git
 cd buddy
-```
-
----
-
-## Step 4: Run the Setup Script
-
-The setup script installs everything, asks for your API key, builds the app, and starts the server:
-
-```bash
 bash setup.sh
 ```
 
-It will:
-1. Install all dependencies
-2. Ask you to paste your Anthropic API key
-3. Build the client
-4. Start the server with pm2 (keeps it running in the background)
+The setup script handles everything else automatically:
 
-When it finishes, open **http://localhost:3001** in a browser on that machine to verify it works. Type something to Buddy and make sure you get a response.
+1. Detects your operating system
+2. Installs build tools (asks permission first)
+3. Installs Node.js if missing (asks permission first)
+4. Installs Docker if missing (asks permission first)
+5. Asks for your Anthropic API key
+6. Installs all dependencies
+7. Builds the frontend
+8. Starts the Docker sandbox
+9. Starts Buddy with pm2 (keeps it running in the background)
+
+Each step shows progress and asks before installing anything. If something goes wrong, it tells you what happened and what to try. Full details are logged to `~/buddy-setup.log`.
+
+When it finishes, open **http://localhost:3001** in a browser on that machine to verify it works.
 
 ---
 
-## Step 5: Install Tailscale (Access from Other Devices)
+## Step 3: Install Tailscale (Access from Other Devices)
 
 Tailscale creates a private network between your devices — this is how you'll use Buddy from your phone, laptop, etc.
 
@@ -118,7 +91,7 @@ That's it — you're using Buddy from your phone.
 
 ---
 
-## Step 6: Start on Boot (Optional but Recommended)
+## Step 4: Start on Boot (Optional but Recommended)
 
 So Buddy survives reboots:
 
@@ -176,6 +149,17 @@ Change the `id`, `name`, and `system_prompt` to create any agent you want. Once 
 
 ---
 
+## Re-running Setup
+
+You can safely re-run `bash setup.sh` at any time. It will:
+- Skip anything already installed
+- Ask if you want to keep your existing API key
+- Rebuild the frontend and restart the server
+
+This is useful after installing Docker, updating Buddy, or fixing issues.
+
+---
+
 ## Troubleshooting
 
 **"Buddy is just thinking and not responding"**
@@ -193,11 +177,14 @@ Change the `id`, `name`, and `system_prompt` to create any agent you want. Once 
 - Run `pm2 startup` and follow the instructions
 - Then `pm2 start ecosystem.config.cjs && pm2 save`
 
+**"Docker sandbox not working"**
+- Re-run `bash setup.sh` — it will set up Docker if it's now available
+- On Linux, if you just installed Docker, log out and log back in first
+- Check `~/buddy-setup.log` for detailed error messages
+
 **"I want to update Buddy"**
 ```bash
 cd buddy
 git pull
-npm run install:all
-npm run build
-pm2 restart all
+bash setup.sh
 ```
