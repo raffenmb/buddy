@@ -9,6 +9,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import tools from "./tools.js";
+import { listSkills, getSkillPrompt } from "./skills.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
 import { getAgent, getMemories, setMemory, getIdentity, getUserInfo } from "./agents.js";
 
@@ -41,7 +42,7 @@ async function executeYouTubeSearch(input) {
 
 /**
  * Build the full system prompt from base template + per-agent personality,
- * user info, and memories.
+ * user info, memories, and enabled custom skills.
  */
 function buildSystemPrompt(agent, memories) {
   const personality = getIdentity(agent.id) || "Be helpful and friendly.";
@@ -59,12 +60,51 @@ function buildSystemPrompt(agent, memories) {
     }
   }
 
-  return systemPromptTemplate
+  let basePrompt = systemPromptTemplate
     .replace("{{name}}", agent.name)
     .replace("{{personality}}", personality)
     .replace("{{user_info}}", userInfoSection)
     .replace("{{memories}}", memoriesSection)
     .trim();
+
+  // Append enabled custom skill prompts
+  const enabledTools = parseEnabledTools(agent.enabled_tools);
+  if (enabledTools) {
+    const installedSkills = listSkills();
+    const builtInNames = tools.map((t) => t.name);
+
+    for (const toolName of enabledTools) {
+      // Skip built-in tools — they're handled via the tools array, not system prompt
+      if (builtInNames.includes(toolName)) continue;
+
+      // Check if this is an installed skill
+      const skill = installedSkills.find((s) => s.folderName === toolName);
+      if (!skill) continue; // stale reference, skip silently
+
+      const prompt = getSkillPrompt(toolName);
+      if (prompt) {
+        basePrompt += `\n\n## Skill: ${skill.name}\n${prompt}`;
+      }
+    }
+  }
+
+  return basePrompt;
+}
+
+/**
+ * Parse the enabled_tools field from an agent record.
+ * Returns an array of tool/skill names, or null if all built-in tools enabled.
+ */
+function parseEnabledTools(enabledToolsRaw) {
+  if (!enabledToolsRaw) return null;
+  try {
+    const parsed = typeof enabledToolsRaw === "string"
+      ? JSON.parse(enabledToolsRaw)
+      : enabledToolsRaw;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -86,20 +126,13 @@ export async function processPrompt(userText, agentId = "buddy") {
 
   // 2. Filter tools based on agent's enabled_tools setting
   //    Canvas tools are always included; only non-canvas tools are toggleable.
+  //    Custom skills are NOT API tools — they're injected into the system prompt.
   let agentTools = tools;
-  if (agent.enabled_tools) {
-    try {
-      const enabledTools = typeof agent.enabled_tools === "string"
-        ? JSON.parse(agent.enabled_tools)
-        : agent.enabled_tools;
-      if (Array.isArray(enabledTools)) {
-        agentTools = tools.filter(
-          (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name)
-        );
-      }
-    } catch {
-      // If parsing fails, use all tools
-    }
+  const enabledTools = parseEnabledTools(agent.enabled_tools);
+  if (enabledTools) {
+    agentTools = tools.filter(
+      (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name)
+    );
   }
 
   // 3. Add user message to session history
