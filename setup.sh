@@ -412,6 +412,7 @@ run_logged "Building client" npm run build || \
 step "Setting up Docker sandbox..."
 
 if [ "$DOCKER_AVAILABLE" = true ]; then
+    info "This may take a few minutes (building the container image)..."
     # Use sg if Docker was just installed on Linux (group not yet active in this shell)
     DOCKER_CMD="docker compose up -d --build"
     if [ "$DOCKER_JUST_INSTALLED" = true ] && [ "$OS" = "linux" ]; then
@@ -481,8 +482,12 @@ echo ""
 echo "  ${BOLD}Next steps:${RESET}"
 echo ""
 echo "  1. ${CYAN}Access from your phone/other devices:${RESET}"
-echo "     Install Tailscale on this machine and your devices."
-echo "     https://tailscale.com/download"
+echo "     a) Install Tailscale on this machine: https://tailscale.com/download"
+echo "        Then run: ${BOLD}sudo tailscale up${RESET}"
+echo "     b) Install Tailscale on your phone/laptop/tablet (same link)"
+echo "        Sign in with the ${BOLD}same account${RESET} on both devices."
+echo "     c) Find this machine's Tailscale address: ${BOLD}tailscale status${RESET}"
+echo "        Open ${BOLD}http://<tailscale-address>:3001${RESET} on your other device."
 echo ""
 echo "  2. ${CYAN}Auto-start on reboot:${RESET}"
 echo "     Run: ${BOLD}pm2 startup${RESET}"
