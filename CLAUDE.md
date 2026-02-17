@@ -71,6 +71,14 @@ No automated test framework is configured. Testing is manual (see test scenarios
 - `client/src/components/canvas-elements/` — 7 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification
 - `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches for non-canvas tools only)
 
+**Custom Skills:**
+- `server/skills/` — Directory for custom skill folders (each contains `SKILL.md` with YAML frontmatter)
+- `server/skills.js` — Scans, validates, and manages custom skills (CRUD + YAML frontmatter parsing)
+- Skills use Claude Code's `SKILL.md` format: YAML frontmatter with `name:` and `description:`, followed by a markdown prompt
+- When enabled on an agent, skill prompts are appended to the system prompt sent to Claude
+- `enabled_tools` on each agent holds both built-in tool names and skill folder names
+- `null` = all built-in tools ON, custom skills OFF. Explicit array = only listed items ON.
+
 ## Environment
 
 Server requires `server/.env`:
