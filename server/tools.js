@@ -343,26 +343,6 @@ const tools = [
     },
   },
   {
-    name: "canvas_surface_route",
-    description:
-      "Route content to a specific display surface. Use to direct output to the current screen, a phone, a web browser, AR glasses HUD, or let the system choose the best available surface.",
-    input_schema: {
-      type: "object",
-      properties: {
-        target: {
-          type: "string",
-          enum: ["current", "phone", "web", "glasses_hud", "best_available"],
-          description: "The target surface to route content to.",
-        },
-        reason: {
-          type: "string",
-          description: "Explanation for why this surface was chosen.",
-        },
-      },
-      required: ["target"],
-    },
-  },
-  {
     name: "search_youtube",
     description:
       "Search YouTube for videos. Returns real video URLs with titles and durations. ALWAYS use this tool to find videos instead of guessing YouTube URLs. After getting results, use canvas_play_media with the returned URL to embed the video.",

@@ -3,7 +3,6 @@ import { useBuddy } from "../../context/BuddyState";
 import { apiFetch } from "../../lib/api";
 import { AVATAR_PRESETS } from "../../assets/avatars/index.js";
 import ToolSelector from "./ToolSelector";
-import FileManager from "./FileManager";
 
 const MODEL_OPTIONS = [
   { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
@@ -228,7 +227,7 @@ export default function AgentEditor({ agentId, onDeleted }) {
           className="block text-sm font-medium mb-1"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          User Info (user.md)
+          User Info
         </label>
         <textarea
           value={userInfo}
@@ -253,17 +252,6 @@ export default function AgentEditor({ agentId, onDeleted }) {
           Enabled Tools
         </label>
         <ToolSelector enabledTools={enabledTools} onChange={setEnabledTools} />
-      </div>
-
-      {/* Files */}
-      <div>
-        <label
-          className="block text-sm font-medium mb-2"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Extra Files
-        </label>
-        <FileManager agentId={agentId} />
       </div>
 
       {/* Actions */}

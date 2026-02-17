@@ -85,6 +85,7 @@ export async function processPrompt(userText, agentId = "buddy") {
   const systemPrompt = buildSystemPrompt(agent, memories);
 
   // 2. Filter tools based on agent's enabled_tools setting
+  //    Canvas tools are always included; only non-canvas tools are toggleable.
   let agentTools = tools;
   if (agent.enabled_tools) {
     try {
@@ -92,7 +93,9 @@ export async function processPrompt(userText, agentId = "buddy") {
         ? JSON.parse(agent.enabled_tools)
         : agent.enabled_tools;
       if (Array.isArray(enabledTools)) {
-        agentTools = tools.filter((t) => enabledTools.includes(t.name));
+        agentTools = tools.filter(
+          (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name)
+        );
       }
     } catch {
       // If parsing fails, use all tools

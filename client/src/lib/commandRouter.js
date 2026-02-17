@@ -8,8 +8,7 @@ const actionMap = {
   "canvas_show_table": "CANVAS_SHOW_TABLE",
   "canvas_play_media": "CANVAS_PLAY_MEDIA",
   "canvas_show_notification": "CANVAS_SHOW_NOTIFICATION",
-  "canvas_set_theme": "CANVAS_SET_THEME",
-  "canvas_surface_route": "CANVAS_SURFACE_ROUTE"
+  "canvas_set_theme": "CANVAS_SET_THEME"
 };
 
 export function routeCommand(command, params, dispatch) {

@@ -134,9 +134,6 @@ function buddyReducer(state, action) {
         }
       };
 
-    case "CANVAS_SURFACE_ROUTE":
-      return state;
-
     case "SET_PROCESSING":
       return {
         ...state,
