@@ -7,7 +7,7 @@ import db from "./db.js";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
 import { getAgent } from "./agents.js";
-import { default as cronParser } from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 
 const POLL_INTERVAL_MS = 30_000;
 let intervalId = null;
@@ -87,6 +87,7 @@ async function executeSchedule(schedule) {
     // Deliver or queue the response
     if (isUserOnline(schedule.user_id)) {
       const send = (data) => broadcastToUser(schedule.user_id, data);
+      send({ type: "processing", status: true });
       // Notify that this is from a scheduled task
       send({
         type: "canvas_command",
@@ -163,7 +164,7 @@ function buildMessageQueue(schedule, result) {
  */
 function computeNextRun(cronExpression) {
   try {
-    const interval = cronParser.parseExpression(cronExpression);
+    const interval = CronExpressionParser.parse(cronExpression);
     return interval.next().toISOString();
   } catch (err) {
     console.error(`[scheduler] Invalid cron expression '${cronExpression}':`, err.message);
