@@ -1,54 +1,50 @@
 /**
  * Session management — SQLite-backed conversation history,
- * scoped per agent. Named function exports replace the old singleton class.
+ * scoped per user and agent.
  */
 
+import { randomBytes } from "crypto";
 import db from "./db.js";
 
 /**
- * Append a user message to the conversation history.
- * @param {string} text - The user's input text.
- * @param {string} agentId - Agent to scope the message to.
+ * Get or create a session for a user.
+ * Each user gets one session (auto-created on first use).
  */
-export function addUserMessage(text, agentId = "buddy") {
-  db.prepare(
-    "INSERT INTO messages (session_id, agent_id, role, content) VALUES ('default', ?, 'user', ?)"
-  ).run(agentId, JSON.stringify(text));
+function ensureSession(userId) {
+  const existing = db.prepare("SELECT id FROM sessions WHERE user_id = ?").get(userId);
+  if (existing) return existing.id;
+
+  const id = `session-${randomBytes(8).toString("hex")}`;
+  db.prepare("INSERT INTO sessions (id, user_id) VALUES (?, ?)").run(id, userId);
+  return id;
 }
 
-/**
- * Append an assistant response to the conversation history.
- * Stores the full content array (text blocks + tool_use blocks) as JSON.
- * @param {object} response - The Claude API response object.
- * @param {string} agentId - Agent to scope the message to.
- */
-export function addAssistantResponse(response, agentId = "buddy") {
+export function addUserMessage(text, agentId = "buddy", userId) {
+  const sessionId = ensureSession(userId);
   db.prepare(
-    "INSERT INTO messages (session_id, agent_id, role, content) VALUES ('default', ?, 'assistant', ?)"
-  ).run(agentId, JSON.stringify(response.content));
+    "INSERT INTO messages (session_id, agent_id, role, content) VALUES (?, ?, 'user', ?)"
+  ).run(sessionId, agentId, JSON.stringify(text));
 }
 
-/**
- * Append tool results back into the conversation as a user message.
- * The Claude API expects tool_result blocks wrapped in a user role message.
- * @param {Array} results - Array of tool_result content blocks.
- * @param {string} agentId - Agent to scope the message to.
- */
-export function addToolResults(results, agentId = "buddy") {
+export function addAssistantResponse(response, agentId = "buddy", userId) {
+  const sessionId = ensureSession(userId);
   db.prepare(
-    "INSERT INTO messages (session_id, agent_id, role, content) VALUES ('default', ?, 'user', ?)"
-  ).run(agentId, JSON.stringify(results));
+    "INSERT INTO messages (session_id, agent_id, role, content) VALUES (?, ?, 'assistant', ?)"
+  ).run(sessionId, agentId, JSON.stringify(response.content));
 }
 
-/**
- * Return the full message history for the Claude API call, scoped to an agent.
- * @param {string} agentId - Agent whose history to retrieve.
- * @returns {Array} Array of message objects with role and parsed content.
- */
-export function getMessages(agentId = "buddy") {
+export function addToolResults(results, agentId = "buddy", userId) {
+  const sessionId = ensureSession(userId);
+  db.prepare(
+    "INSERT INTO messages (session_id, agent_id, role, content) VALUES (?, ?, 'user', ?)"
+  ).run(sessionId, agentId, JSON.stringify(results));
+}
+
+export function getMessages(agentId = "buddy", userId) {
+  const sessionId = ensureSession(userId);
   const rows = db.prepare(
-    "SELECT role, content FROM messages WHERE session_id = 'default' AND agent_id = ? ORDER BY id"
-  ).all(agentId);
+    "SELECT role, content FROM messages WHERE session_id = ? AND agent_id = ? ORDER BY id"
+  ).all(sessionId, agentId);
 
   return rows.map((row) => ({
     role: row.role,
@@ -56,16 +52,13 @@ export function getMessages(agentId = "buddy") {
   }));
 }
 
-/**
- * Delete messages — by agent or all.
- * @param {string|null} agentId - If provided, only delete that agent's messages. Null = all.
- */
-export function resetSession(agentId = null) {
+export function resetSession(userId, agentId = null) {
+  const sessionId = ensureSession(userId);
   if (agentId) {
     db.prepare(
-      "DELETE FROM messages WHERE session_id = 'default' AND agent_id = ?"
-    ).run(agentId);
+      "DELETE FROM messages WHERE session_id = ? AND agent_id = ?"
+    ).run(sessionId, agentId);
   } else {
-    db.prepare("DELETE FROM messages WHERE session_id = 'default'").run();
+    db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
   }
 }

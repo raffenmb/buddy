@@ -117,11 +117,12 @@ function parseEnabledTools(enabledToolsRaw) {
  *
  * @param {string} userText - The user's input text.
  * @param {string} agentId - The agent to use for this prompt.
+ * @param {string} userId - The authenticated user's ID (scopes session history).
  * @param {Object} [callbacks] - Optional callbacks.
  * @param {Function} [callbacks.requestConfirmation] - Async callback for destructive command approval.
  * @returns {Promise<{allToolCalls: Array, finalTextContent: string}>}
  */
-export async function processPrompt(userText, agentId = "buddy", callbacks = {}) {
+export async function processPrompt(userText, agentId = "buddy", userId, callbacks = {}) {
   // 1. Load agent config and memories
   const agent = getAgent(agentId);
   if (!agent) {
@@ -156,13 +157,13 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
   ];
 
   // 4. Add user message to session history
-  addUserMessage(userText, agentId);
+  addUserMessage(userText, agentId, userId);
 
   // 5. Initial Claude API call
   let response = await anthropic.messages.create({
     model: agent.model,
     system: cachedSystem,
-    messages: getMessages(agentId),
+    messages: getMessages(agentId, userId),
     tools: cachedTools,
     max_tokens: 4096,
   });
@@ -313,21 +314,21 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
     );
 
     // Add assistant response and tool results to session
-    addAssistantResponse(response, agentId);
-    addToolResults(toolResults, agentId);
+    addAssistantResponse(response, agentId, userId);
+    addToolResults(toolResults, agentId, userId);
 
     // Call Claude again with the updated conversation (tools + system cached from first call)
     response = await anthropic.messages.create({
       model: agent.model,
       system: cachedSystem,
-      messages: getMessages(agentId),
+      messages: getMessages(agentId, userId),
       tools: cachedTools,
       max_tokens: 4096,
     });
   }
 
   // 7. stop_reason === "end_turn" — add the final response to session
-  addAssistantResponse(response, agentId);
+  addAssistantResponse(response, agentId, userId);
 
   // 8. Extract text content from the final response
   const finalTextContent = response.content
