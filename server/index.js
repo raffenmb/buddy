@@ -115,6 +115,13 @@ app.post("/api/auth/login", (req, res) => {
 });
 
 app.post("/api/auth/register", (req, res) => {
+  // Middleware skips auth for this route, so decode JWT manually if present
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const decoded = verifyToken(authHeader.replace(/^Bearer\s+/i, ""));
+    if (decoded) req.user = decoded;
+  }
+
   const { username, password, displayName } = req.body;
 
   // Only allow if: no users exist (first-run), or requester is admin
