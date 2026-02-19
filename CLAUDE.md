@@ -2,23 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project Vision
 
-Buddy is a personal AI avatar interface where a small character lives in the corner of the screen, speaks through subtitles and TTS (one response at a time, no chat history), and renders dynamic visual content (charts, cards, tables, video, media) on a full-screen canvas behind it. The user sees only the current response; the server maintains full conversation history invisibly.
+Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on home PC. It has full host access — it can run any command, read/write any file, manage background processes, create its own skills, and spawn sub-agents to delegate complex work. The user interacts with Buddy through a conversational web interface with a small avatar character, subtitles, TTS, and a full-screen canvas for rich visual content.
 
-The roadmap lives in `buddy-implementation-plan.md`. It defines five layers:
-- **Layer 1 (MVP) — DONE:** Static avatar + subtitles + dynamic canvas + browser TTS + YouTube search
-- **Layer 2:** Dedicated server (SQLite persistence, auth, pm2, Tailscale)
-- **Layer 3:** Mobile app (React Native / Expo)
-- **Layer 4:** Enhanced experience (premium TTS, voice input, animated avatar, more tools)
-- **Layer 5:** Multi-device intelligence (device routing, cross-device sessions)
+**The agent IS the interface.** Creating tools, managing skills, viewing processes, administering the system — all done by asking Buddy. The admin UI is minimal (agent list, basic settings, skill upload). Everything else happens through conversation.
+
+**Key principles:**
+- **Full host access** — Buddy can do anything the user can do in a terminal, with a confirmation gate for destructive operations
+- **Self-evolving** — Buddy creates and modifies its own skills, builds sub-agent templates, and extends its capabilities over time
+- **Conversation-first** — the agent manages itself through conversation, not through admin panels
+- **Skills as the single extensibility layer** — no separate "tool registry." Built-in tools are platform primitives; everything else is a skill (SKILL.md + optional scripts)
 
 ## Tech Stack
 
 - **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `yt-search`
 - **Frontend:** React 18 with Vite, Tailwind CSS 4, Victory (charts)
+- **Database:** SQLite via `better-sqlite3` at `~/.buddy/buddy.db`
 - **State:** React Context + useReducer (command/reducer pattern)
-- **TTS:** Browser Speech API (to be replaced with ElevenLabs/OpenAI in Layer 4)
+- **TTS:** Browser Speech API (to be replaced with ElevenLabs/OpenAI later)
 - **Theme:** Light mode default with dark mode toggle (Figtree font, pastel/soft design system)
 - **No TypeScript** — vanilla JS (.jsx/.js files)
 
@@ -35,50 +37,178 @@ cd server && node index.js
 cd client && npm run dev
 ```
 
-No automated test framework is configured. Testing is manual (see test scenarios in the implementation plan).
+No automated test framework is configured. Testing is manual.
 
 ## Architecture
 
-**Two output streams** from every AI response:
+### Server-as-OS Model
+
+The server provides **platform primitives** (built-in tools) that give Buddy full control of the host machine. Skills are the single extensibility layer built on top of these primitives.
+
+**Platform primitives (always available, not toggleable):**
+
+| Tool | Purpose |
+|------|---------|
+| `shell_exec` | Run any command on the host |
+| `read_file` | Read any file |
+| `write_file` | Write files (dev mode: restricted to `~/.buddy/` and `/tmp/`) |
+| `list_directory` | List directory contents |
+| `process_start` | Launch a long-lived background process |
+| `process_stop` | Stop a managed process (SIGTERM, then SIGKILL after 5s) |
+| `process_status` | Check status of managed processes |
+| `process_logs` | Tail stdout/stderr logs from managed processes |
+| `spawn_agent` | Delegate a task to an independent sub-agent worker |
+| `create_agent_template` | Define reusable sub-agent configurations |
+
+**Toggleable tools (per agent via admin UI):**
+- `search_youtube` — YouTube video search
+- `remember_fact` — Per-agent key-value memory
+- Installed skills (from `~/.buddy/skills/`)
+
+### Two Output Streams
+
+Every AI response produces:
 1. **Subtitle** — short conversational text displayed next to the avatar (replaces previous), spoken aloud via TTS
 2. **Canvas commands** — structured tool calls that render visual elements on the background
 
-**Data flow:**
-1. User types → `POST /api/prompt` → server appends to session history
-2. Server calls Claude API with full history + tool definitions (10 canvas always-on + toggleable non-canvas tools)
-3. Tool use loop runs until `stop_reason === "end_turn"`. Server-side tools (YouTube search, remember_fact) execute and return real data. Canvas tools return `{ status: "rendered" }`.
+### Data Flow
+
+1. User types -> `POST /api/prompt` -> server appends to session history
+2. Server calls Claude API with full history + tool definitions (10 canvas always-on + platform tools + toggleable tools)
+3. Tool use loop runs until `stop_reason === "end_turn"`. Platform tools execute on the host. Canvas tools return `{ status: "rendered" }`.
 4. Response Splitter separates tool calls (canvas) from text (subtitle)
 5. Canvas commands broadcast via WebSocket **first**, then subtitle — so visuals appear before Buddy "speaks"
-6. Frontend CommandRouter maps `canvas_*` commands → reducer actions → component re-renders
+6. Frontend CommandRouter maps `canvas_*` commands -> reducer actions -> component re-renders
 
-**Key server modules:**
-- `server/index.js` — Express + WebSocket entry point
-- `server/claude-client.js` — Claude API integration with tool use loop + YouTube search execution
-- `server/tools.js` — Canvas + server-side tool definitions (10 canvas + 2 non-canvas)
+### Confirmation Gate
+
+Destructive commands (rm -rf, disk operations, service management, etc.) trigger an interactive **ActionConfirm** canvas element:
+
+1. Agent calls `shell_exec` with a command matching a guard pattern in `~/.buddy/config/guards.json`
+2. Server pauses execution, sends `canvas_show_confirmation` to frontend
+3. ActionConfirm card appears on canvas with command, reason, and Approve/Deny buttons
+4. User clicks -> frontend sends `confirm_response` via WebSocket
+5. Server executes or rejects the command
+6. Card updates to show outcome (stays visible as audit record)
+
+Timeout: 60 seconds, auto-denied. Guard patterns are editable by the agent (but editing guards itself triggers confirmation).
+
+### Output Summarization
+
+Long command output (>200 lines) is summarized by Haiku before returning to Claude, saving tokens. Full output is always saved to `~/.buddy/logs/exec-<id>.log` — Claude can `read_file` on the log if the summary isn't enough. Short output (<200 lines) passes through directly.
+
+### Sub-Agent Model
+
+The main agent is always the face of the conversation. Sub-agents are invisible workers:
+- Main agent delegates via `spawn_agent` tool
+- Worker runs as a forked child process (`server/subagent/worker.js`) with its own Claude conversation
+- Sub-agents get platform tools (shell, filesystem) but cannot send canvas commands or spawn their own sub-agents
+- Results returned to main agent (summarized by Haiku if large)
+- Reusable templates stored in SQLite `agent_templates` table
+
+### Skills (Single Extensibility Layer)
+
+Skills live at `~/.buddy/skills/`. Each skill is a folder:
+
+```
+check-weather/
+  SKILL.md              # YAML frontmatter (name, description) + prompt instructions
+  scripts/
+    get_weather.py      # Bundled script, executed via shell_exec
+```
+
+**Progressive disclosure (on-demand loading):**
+1. System prompt lists only name + description for each enabled skill
+2. Agent reads full SKILL.md via `read_file` when it decides a skill is relevant
+3. Agent runs bundled scripts via `shell_exec`
+
+**Two creation paths:**
+- User uploads via admin UI -> validated -> written to `~/.buddy/skills/`
+- Agent creates via `write_file` -> server detects on next prompt scan
+
+### Environment Modes
+
+```
+BUDDY_ENV=development   # Laptop — writes restricted to ~/.buddy/ and /tmp/
+BUDDY_ENV=production    # Always-on PC — full host access
+```
+
+| Behavior | development | production |
+|----------|-------------|------------|
+| Shell commands | Scoped to `~/.buddy/` and `/tmp/` | Full host access |
+| Filesystem writes | Only `~/.buddy/` and `/tmp/` | Full access |
+| Filesystem reads | Anywhere | Anywhere |
+| Destructive gate | All commands require confirmation | Only pattern-matched |
+| Process management | Only agent-started processes | Full access |
+
+## Data Layout
+
+```
+~/.buddy/
+  config/
+    guards.json              # Destructive command patterns
+  skills/
+    <skill-folder>/
+      SKILL.md
+      scripts/
+  agents/
+    <agent-id>/
+      identity.md            # Personality
+      user.md                # User context
+  processes/
+    proc-<id>/
+      meta.json              # Command, PID, status, startTime
+      stdout.log
+      stderr.log
+  logs/
+    exec-<id>.log            # Full output from summarized commands
+  shared/
+    <files for user download>
+  buddy.db                   # SQLite
+```
+
+**SQLite tables:**
+
+| Table | Purpose |
+|-------|---------|
+| `agents` | Agent configs (model, system_prompt, avatar, voice, enabled_tools) |
+| `agent_memory` | Per-agent key-value memory |
+| `sessions` | Conversation sessions |
+| `messages` | Session message history |
+| `agent_templates` | Reusable sub-agent configurations (name, system_prompt, allowed_tools, max_turns) |
+
+## Key Server Modules
+
+- `server/config.js` — BUDDY_HOME (`~/.buddy`), ENV, DIRS, GUARDS_PATH. Creates all directories and default config on first import. Every module imports paths from here.
+- `server/index.js` — Express + WebSocket entry point, confirmation gate, static file route (`/files` -> `~/.buddy/shared/`)
+- `server/claude-client.js` — Claude API integration with tool use loop, platform tool handlers, output summarization
+- `server/tools.js` — Tool definitions (10 canvas + 10 platform + toggleable). Exports `PLATFORM_TOOL_NAMES`.
 - `server/response-splitter.js` — Separates subtitle text from canvas commands
-- `server/session.js` — In-memory conversation history (SQLite in Layer 2)
+- `server/db.js` — SQLite setup at `~/.buddy/buddy.db`, schema migrations
+- `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`
+- `server/skills.js` — Skill scanning, validation, CRUD at `~/.buddy/skills/`
+- `server/session.js` — Conversation history management
+- `server/shell/executor.js` — Host command execution via `child_process.spawn`, guard validation, confirmation callback
+- `server/shell/guards.js` — Destructive command detection (hard-blocked, needs-confirmation, dev-mode restrictions)
+- `server/shell/filesystem.js` — Host filesystem operations (readFile, writeFile, listDirectory), dev-mode write restrictions
+- `server/shell/processManager.js` — Long-lived background process lifecycle (start, stop, status, logs) at `~/.buddy/processes/`
+- `server/shell/summarizer.js` — Haiku-based output summarization for long command output, log file storage
+- `server/subagent/spawner.js` — Sub-agent template CRUD + `spawnSubAgent()` (forks worker, returns result)
+- `server/subagent/worker.js` — Forked child process with own Claude conversation, platform tool handlers, IPC communication
 
-**Key client modules:**
-- `client/src/context/BuddyState.jsx` — Global state (useReducer): avatar, subtitle, canvas, input, connection, admin stack nav. Includes element ID deduplication.
+## Key Client Modules
+
+- `client/src/context/BuddyState.jsx` — Global state (useReducer): avatar, subtitle, canvas, input, connection, admin stack nav. Includes element ID deduplication and shared wsRef.
 - `client/src/components/TopBar.jsx` — Agent name, connection dot, theme toggle, admin gear button
 - `client/src/components/Avatar.jsx` — Bottom-left, two-frame mouth toggle (150ms interval), JS-driven bob animation (requestAnimationFrame), subtitle display, browser TTS
 - `client/src/components/Canvas.jsx` — Scrollable region with modes: ambient, content, media, clear. 5 flexbox-only layouts.
 - `client/src/components/InputBar.jsx` — Pill-shaped input with circular send button
-- `client/src/hooks/useWebSocket.js` — WS connection, message routing, reconnect with exponential backoff
+- `client/src/hooks/useWebSocket.js` — WS connection, message routing, reconnect with exponential backoff. Uses shared wsRef from context.
 - `client/src/hooks/useTheme.jsx` — ThemeProvider + useTheme hook, dark mode toggle, persists to localStorage
 - `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
-- `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types
-- `client/src/components/canvas-elements/` — 7 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification
-- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches for non-canvas tools only)
-
-**Custom Skills:**
-- `server/skills/` — Directory for custom skill folders (each contains `SKILL.md` with YAML frontmatter)
-- `server/skills.js` — Scans, validates, and manages custom skills (CRUD + YAML frontmatter parsing)
-- Skills use Claude Code's `SKILL.md` format: YAML frontmatter with `name:` and `description:`, followed by a markdown prompt
-- `enabled_tools` on each agent holds both built-in tool names and skill folder names
-- `null` = all built-in tools ON, custom skills OFF. Explicit array = only listed items ON.
-- **Current state:** Full skill prompts injected into system prompt (temporary, token-inefficient)
-- **Planned refactor:** Once terminal execution is built, switch to on-demand loading — only name/description in system prompt, agent reads full SKILL.md via bash tool when relevant (matches Anthropic's recommended pattern, see design doc)
+- `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types (including `canvas_show_confirmation`)
+- `client/src/components/canvas-elements/` — 8 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification, **ActionConfirm** (interactive destructive command confirmation)
+- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches for non-canvas, non-platform tools + installed skills)
 
 ## Environment
 
@@ -87,18 +217,24 @@ Server requires `server/.env`:
 ANTHROPIC_API_KEY=sk-ant-...
 PORT=3001
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
+BUDDY_ENV=development
 ```
+
+`BUDDY_ENV` defaults to `development` if not set. Set to `production` on the always-on home PC for full host access.
 
 ## Key Design Constraints
 
 - **Canvas commands before subtitles** — visuals must appear before Buddy "speaks" about them
-- **Canvas tools always sent to API** — not toggleable in admin. Non-canvas tools (search_youtube, remember_fact) are toggleable per agent.
-- **Canvas tool results return `{ status: "rendered" }`** — display-only. Server-side tools (search_youtube, remember_fact) return real data.
+- **Canvas tools always sent to API** — not toggleable in admin. Platform tools also always available.
+- **Canvas tool results return `{ status: "rendered" }`** — display-only. Platform tools return real data.
 - **TTS synced to speech** — mouth animation stops on `speechSynthesis.onend`, with fallback timer
-- **Single session, in-memory** — resets on server restart (SQLite persistence is Layer 2)
 - **Subtitle replaces previous** — never accumulate; old subtitle clears when user sends a new message
 - **Canvas element IDs auto-deduplicated** — reducer appends `-2`, `-3` etc. on collision
 - **System prompt instructs Buddy** to keep subtitles to 1-3 sentences, use canvas for detailed content, search YouTube for real URLs instead of guessing
+- **Conversation-first administration** — the agent manages skills, processes, and system config through conversation. Admin UI is for basic settings only.
+- **Skills are the single extensibility layer** — no separate tool registry. Built-in tools are platform primitives. Everything the agent builds on top is a skill.
+- **On-demand skill loading** — only name/description in system prompt. Agent reads full SKILL.md via `read_file` when relevant (Anthropic's recommended pattern).
+- **All user data lives in `~/.buddy/`** — decoupled from the codebase. Skills, agents, processes, logs, shared files, database, and config all live outside the repo.
 
 ## Cross-Platform Parity Rule
 
@@ -129,9 +265,15 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 - `window.speechSynthesis` — will use `expo-speech` on mobile
 - Vite proxy for `/api` — mobile will connect directly to server URL
 - Google Fonts `<link>` — mobile will use `expo-font`
-- Skill folder upload (drag-drop, directory picker, `webkitdirectory`) — **desktop-only feature**. Users won't build/share skill folders from a phone. Future mobile path: a skill marketplace where users browse and enable pre-built skills.
+- Skill folder upload (drag-drop, directory picker, `webkitdirectory`) — **desktop-only feature**. Users won't build/share skill folders from a phone.
 
 **Cross-platform alert/confirm:**
 - Never use browser `alert()` or `confirm()` — use `useAlert()` hook from `components/AlertModal.jsx`
 - `showAlert(message)` replaces `alert()`, `showConfirm(message)` replaces `confirm()` (returns a promise resolving to `true`/`false`)
 - Renders a themed flexbox modal that works identically on web and React Native
+- Note: ActionConfirm (canvas-based confirmation for destructive commands) is separate from AlertModal (general-purpose modal)
+
+## Design Documents
+
+- `docs/plans/2026-02-18-server-as-os-redesign.md` — Full design document for the Server-as-OS architecture
+- `docs/plans/2026-02-18-server-as-os-implementation.md` — 25-task implementation plan (7 phases)
