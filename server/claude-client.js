@@ -16,6 +16,7 @@ import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
 import { startProcess, stopProcess, getProcessStatus, getProcessLogs } from "./shell/processManager.js";
 import { maybeSummarize } from "./shell/summarizer.js";
 import { spawnSubAgent, createTemplate } from "./subagent/spawner.js";
+import { createSchedule, listSchedules, deleteSchedule } from "./scheduler.js";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -304,6 +305,52 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
             tool_use_id: toolUse.id,
             content: JSON.stringify(result),
           };
+        }
+        if (toolUse.name === "create_schedule") {
+          try {
+            const result = createSchedule({
+              ...toolUse.input,
+              agent_id: toolUse.input.agent_id || agentId,
+              user_id: userId,
+            });
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify(result),
+            };
+          } catch (err) {
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ error: err.message }),
+              is_error: true,
+            };
+          }
+        }
+        if (toolUse.name === "list_schedules") {
+          const result = listSchedules(userId, toolUse.input.enabled_only !== false);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          };
+        }
+        if (toolUse.name === "delete_schedule") {
+          try {
+            const result = deleteSchedule(toolUse.input.schedule_id, userId);
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify(result),
+            };
+          } catch (err) {
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ error: err.message }),
+              is_error: true,
+            };
+          }
         }
         return {
           type: "tool_result",
