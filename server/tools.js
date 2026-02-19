@@ -381,24 +381,9 @@ const tools = [
     },
   },
   {
-    name: "read_skill",
-    description:
-      "Read the full prompt for an enabled custom skill. Call this when a user's request matches a skill's description before responding.",
-    input_schema: {
-      type: "object",
-      properties: {
-        skill_name: {
-          type: "string",
-          description: "The folder name of the skill to read.",
-        },
-      },
-      required: ["skill_name"],
-    },
-  },
-  {
     name: "shell_exec",
     description:
-      "Execute a shell command in the sandbox environment. Use for file operations, running scripts, data processing, installing packages, etc. Working directory is /agent by default. The sandbox has curl, git, jq, python3, imagemagick, ffmpeg, and other utilities.",
+      "Execute a shell command on the host machine. Has access to all installed utilities (git, node, python3, curl, ffmpeg, etc.). Destructive commands (rm, mv, chmod, etc.) require user confirmation before executing. Use for running scripts, data processing, installing packages, system tasks, and any command-line operation.",
     input_schema: {
       type: "object",
       properties: {
@@ -408,11 +393,13 @@ const tools = [
         },
         cwd: {
           type: "string",
-          description: "Working directory inside the sandbox (default: /agent).",
+          description:
+            "Working directory for the command (default: user home directory).",
         },
         timeout: {
           type: "number",
-          description: "Timeout in milliseconds (default: 30000).",
+          description:
+            "Timeout in milliseconds (default: 30000, max: 600000).",
         },
       },
       required: ["command"],
@@ -421,13 +408,13 @@ const tools = [
   {
     name: "read_file",
     description:
-      "Read the contents of a file in the sandbox. Path must be within /agent/.",
+      "Read the contents of a file on the host machine. Can read any file the server process has access to. Returns the file content as a string.",
     input_schema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Absolute path to the file (must be within /agent/).",
+          description: "Absolute path to the file to read.",
         },
       },
       required: ["path"],
@@ -436,13 +423,13 @@ const tools = [
   {
     name: "write_file",
     description:
-      "Write content to a file in the sandbox. Creates parent directories if needed. Path must be within /agent/.",
+      "Write content to a file on the host machine. Creates parent directories if they don't exist. In dev mode, writes are restricted to ~/.buddy/ and /tmp/ for safety.",
     input_schema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Absolute path for the file (must be within /agent/).",
+          description: "Absolute path for the file to write.",
         },
         content: {
           type: "string",
@@ -455,37 +442,26 @@ const tools = [
   {
     name: "list_directory",
     description:
-      "List files and directories at a given path in the sandbox.",
+      "List files and directories at a given path on the host machine. Returns entries with name, type (file/directory), size in bytes, and last modified timestamp.",
     input_schema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Absolute path to list (default: /agent/data).",
+          description:
+            "Absolute path to list (default: user home directory).",
         },
       },
       required: [],
     },
   },
-  {
-    name: "send_file",
-    description:
-      "Send a file from the sandbox back to the user through the chat. Use when the user asks for a file you created or processed.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "Path to the file inside the sandbox to send to the user.",
-        },
-        message: {
-          type: "string",
-          description: "Optional message to accompany the file.",
-        },
-      },
-      required: ["path"],
-    },
-  },
+];
+
+export const PLATFORM_TOOL_NAMES = [
+  "shell_exec",
+  "read_file",
+  "write_file",
+  "list_directory",
 ];
 
 export default tools;
