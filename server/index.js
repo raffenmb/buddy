@@ -18,6 +18,7 @@ import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemorie
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
 import { resetSession } from "./session.js";
 import { DIRS } from "./config.js";
+import { runSetupIfNeeded } from "./setup.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -410,9 +411,13 @@ wss.on("connection", (ws, req) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
-  console.log(`Buddy server running on http://localhost:${PORT}`);
-  console.log(`WebSocket server ready on ws://localhost:${PORT}`);
-  console.log(`Environment: ${process.env.BUDDY_ENV || "development"}`);
-  console.log(`Data directory: ${DIRS.root}`);
-});
+(async () => {
+  await runSetupIfNeeded();
+
+  server.listen(PORT, () => {
+    console.log(`Buddy server running on http://localhost:${PORT}`);
+    console.log(`WebSocket server ready on ws://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.BUDDY_ENV || "development"}`);
+    console.log(`Data directory: ${DIRS.root}`);
+  });
+})();

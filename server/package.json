@@ -8,10 +8,12 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.47",
     "@anthropic-ai/sdk": "^0.39.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "ws": "^8.18.0",
     "yt-search": "^2.13.1"
   }

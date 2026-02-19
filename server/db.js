@@ -16,6 +16,15 @@ db.pragma("foreign_keys = ON");
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name  TEXT NOT NULL,
+    is_admin      INTEGER DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -67,6 +76,12 @@ db.exec(`
 // Add avatar and enabled_tools columns (idempotent)
 try { db.exec("ALTER TABLE agents ADD COLUMN avatar TEXT DEFAULT 'buddy'"); } catch {}
 try { db.exec("ALTER TABLE agents ADD COLUMN enabled_tools TEXT DEFAULT NULL"); } catch {}
+
+// Add user_id to agents (nullable — NULL means shared agent)
+try { db.exec("ALTER TABLE agents ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE"); } catch {}
+
+// Add user_id to sessions
+try { db.exec("ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE"); } catch {}
 
 // Seed default session
 db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('default')").run();
