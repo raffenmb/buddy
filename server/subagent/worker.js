@@ -74,12 +74,29 @@ async function runTask({ task, systemPrompt, tools, model, maxTurns }) {
   const messages = [{ role: "user", content: task }];
   let turns = 0;
 
+  // Enable prompt caching — tools and system prompt are reused across loop iterations
+  const rawTools = tools || [];
+  const cachedTools = rawTools.length > 0
+    ? rawTools.map((t, i) =>
+        i === rawTools.length - 1
+          ? { ...t, cache_control: { type: "ephemeral" } }
+          : t
+      )
+    : rawTools;
+  const cachedSystem = [
+    {
+      type: "text",
+      text: systemPrompt || "You are a helpful sub-agent. Complete the task and return the result.",
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+
   // Initial Claude API call
   let response = await anthropic.messages.create({
     model: model || "claude-haiku-4-5-20251001",
-    system: systemPrompt || "You are a helpful sub-agent. Complete the task and return the result.",
+    system: cachedSystem,
     messages,
-    tools: tools || [],
+    tools: cachedTools,
     max_tokens: 4096,
   });
 
@@ -120,12 +137,12 @@ async function runTask({ task, systemPrompt, tools, model, maxTurns }) {
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
 
-    // Call Claude again
+    // Call Claude again (tools + system cached from first call)
     response = await anthropic.messages.create({
       model: model || "claude-haiku-4-5-20251001",
-      system: systemPrompt || "You are a helpful sub-agent. Complete the task and return the result.",
+      system: cachedSystem,
       messages,
-      tools: tools || [],
+      tools: cachedTools,
       max_tokens: 4096,
     });
   }
