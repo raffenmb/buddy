@@ -14,7 +14,8 @@ import { dirname, join } from "path";
 import { writeFileSync } from "fs";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
-import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent } from "./agents.js";
+import db from "./db.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
 import { resetSession } from "./session.js";
 import { DIRS } from "./config.js";
@@ -47,21 +48,19 @@ function authMiddleware(req, res, next) {
 
 app.use("/api", authMiddleware);
 
-// ─── Track current agent per-connection (module level) ────────────────────────
+// ─── Per-Connection State ─────────────────────────────────────────────────────
 
-let currentAgentId = "buddy";
+const wsConnections = new Map(); // ws -> { userId, agentId }
 
-/**
- * Broadcast a JSON message to all connected WebSocket clients.
- * @param {object} data - The message payload to serialize and send.
- */
-function broadcast(data) {
+function sendTo(ws, data) {
+  if (ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+function broadcastToUser(userId, data) {
   const message = JSON.stringify(data);
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(message);
-    }
-  });
+  for (const [ws, conn] of wsConnections) {
+    if (conn.userId === userId && ws.readyState === 1) ws.send(message);
+  }
 }
 
 // ─── Confirmation Gate ───────────────────────────────────────────────────────
@@ -69,17 +68,15 @@ function broadcast(data) {
 const pendingConfirmations = new Map();
 let confirmIdCounter = 0;
 
-function requestConfirmation(command, reason) {
+function requestConfirmationForClient(ws, command, reason) {
   return new Promise((resolve) => {
     const id = `confirm-${++confirmIdCounter}`;
     pendingConfirmations.set(id, resolve);
-
-    broadcast({
+    sendTo(ws, {
       type: "canvas_command",
       command: "canvas_show_confirmation",
       params: { id, title: "Confirm Action", command, reason },
     });
-
     setTimeout(() => {
       if (pendingConfirmations.has(id)) {
         pendingConfirmations.delete(id);
@@ -167,31 +164,98 @@ app.get("/api/auth/me", (req, res) => {
   });
 });
 
+// ─── Admin User Routes ──────────────────────────────────────────────────────
+
+app.get("/api/admin/users", (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: "Admin only" });
+  res.json(listUsers());
+});
+
+app.post("/api/admin/users", (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: "Admin only" });
+
+  const { username, password, displayName } = req.body;
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ error: "username, password, and displayName required" });
+  }
+  if (!/^[a-z0-9_-]+$/.test(username.toLowerCase())) {
+    return res.status(400).json({ error: "Username must be lowercase alphanumeric" });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters" });
+  }
+
+  try {
+    const user = createUser({ username, password, displayName, isAdmin: false });
+    seedBuddyAgent(user.id);
+    res.status(201).json(user);
+  } catch (err) {
+    if (err.message.includes("UNIQUE constraint")) {
+      return res.status(409).json({ error: "Username already taken" });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/admin/users/:id", (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: "Admin only" });
+
+  const { is_admin } = req.body;
+  if (is_admin === 0 && req.params.id === req.user.userId) {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE is_admin = 1").get().count;
+    if (adminCount <= 1) {
+      return res.status(400).json({ error: "Cannot demote the last admin" });
+    }
+  }
+
+  try {
+    updateUser(req.params.id, req.body);
+    const updated = getUserById(req.params.id);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/users/:id", (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: "Admin only" });
+  if (req.params.id === req.user.userId) {
+    return res.status(400).json({ error: "Cannot delete your own account" });
+  }
+  try {
+    deleteUser(req.params.id);
+    res.json({ status: "deleted" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // ─── Agent Routes ─────────────────────────────────────────────────────────────
 
 app.get("/api/agents", (req, res) => {
-  res.json(listAgents());
+  res.json(listAgents(req.user.userId));
 });
 
 app.get("/api/agents/:id", (req, res) => {
+  if (!canAccessAgent(req.params.id, req.user.userId)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   const agent = getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: "Agent not found" });
   res.json(agent);
 });
 
 app.post("/api/agents", (req, res) => {
-  const { id, name, system_prompt, model, avatar_config, voice_config, identity, user_info } = req.body;
-
-  if (!id || !name) {
-    return res.status(400).json({ error: "id and name are required" });
-  }
-
-  if (getAgent(id)) {
-    return res.status(409).json({ error: "Agent with this id already exists" });
-  }
+  const { id, name, system_prompt, model, avatar_config, voice_config, identity, user_info, shared } = req.body;
+  if (!id || !name) return res.status(400).json({ error: "id and name are required" });
+  if (getAgent(id)) return res.status(409).json({ error: "Agent with this id already exists" });
+  if (shared && !req.user.isAdmin) return res.status(403).json({ error: "Only admins can create shared agents" });
 
   try {
-    const agent = createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info });
+    const agent = createAgent({
+      id, name, model, system_prompt, avatar_config, voice_config, identity, user_info,
+      userId: shared ? null : req.user.userId,
+    });
     res.status(201).json(agent);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -201,6 +265,9 @@ app.post("/api/agents", (req, res) => {
 app.put("/api/agents/:id", (req, res) => {
   const agent = getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: "Agent not found" });
+  if (agent.user_id && agent.user_id !== req.user.userId) {
+    return res.status(403).json({ error: "Access denied" });
+  }
 
   try {
     updateAgent(req.params.id, req.body);
@@ -212,7 +279,12 @@ app.put("/api/agents/:id", (req, res) => {
 
 app.delete("/api/agents/:id", (req, res) => {
   try {
-    deleteAgent(req.params.id);
+    const agent = getAgent(req.params.id);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    if (!agent.user_id && !req.user.isAdmin) {
+      return res.status(403).json({ error: "Only admins can delete shared agents" });
+    }
+    deleteAgent(req.params.id, req.user.userId);
     res.json({ status: "deleted" });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -222,10 +294,16 @@ app.delete("/api/agents/:id", (req, res) => {
 // ─── Memory Routes ────────────────────────────────────────────────────────────
 
 app.get("/api/agents/:id/memory", (req, res) => {
+  if (!canAccessAgent(req.params.id, req.user.userId)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   res.json(getMemories(req.params.id));
 });
 
 app.delete("/api/agents/:id/memory/:key", (req, res) => {
+  if (!canAccessAgent(req.params.id, req.user.userId)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   deleteMemory(req.params.id, req.params.key);
   res.json({ status: "deleted" });
 });
@@ -233,32 +311,27 @@ app.delete("/api/agents/:id/memory/:key", (req, res) => {
 // ─── Agent File Routes ────────────────────────────────────────────────────
 
 app.get("/api/agents/:id/files", (req, res) => {
-  const agent = getAgent(req.params.id);
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  if (!canAccessAgent(req.params.id, req.user.userId)) return res.status(403).json({ error: "Access denied" });
   res.json(getAgentFiles(req.params.id));
 });
 
 app.get("/api/agents/:id/files/:filename", (req, res) => {
-  const agent = getAgent(req.params.id);
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
-
+  if (!canAccessAgent(req.params.id, req.user.userId)) return res.status(403).json({ error: "Access denied" });
   const content = readAgentFile(req.params.id, req.params.filename);
   if (content === null) return res.status(404).json({ error: "File not found" });
   res.json({ name: req.params.filename, content });
 });
 
 app.put("/api/agents/:id/files/:filename", (req, res) => {
-  const agent = getAgent(req.params.id);
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
-
+  if (!canAccessAgent(req.params.id, req.user.userId)) return res.status(403).json({ error: "Access denied" });
   const { content } = req.body;
   if (content === undefined) return res.status(400).json({ error: "content is required" });
-
   writeAgentFile(req.params.id, req.params.filename, content);
   res.json({ status: "saved", name: req.params.filename });
 });
 
 app.delete("/api/agents/:id/files/:filename", (req, res) => {
+  if (!canAccessAgent(req.params.id, req.user.userId)) return res.status(403).json({ error: "Access denied" });
   try {
     deleteAgentFile(req.params.id, req.params.filename);
     res.json({ status: "deleted" });
@@ -329,7 +402,7 @@ app.delete("/api/skills/:folderName", (req, res) => {
 
 app.post("/api/session/reset", (req, res) => {
   const { agent_id } = req.body || {};
-  resetSession(agent_id || null);
+  resetSession(req.user.userId, agent_id || null);
   res.json({ status: "reset" });
 });
 
@@ -338,9 +411,14 @@ app.post("/api/session/reset", (req, res) => {
 app.post("/api/prompt", (req, res) => {
   const { prompt, agent_id } = req.body;
   const agentId = agent_id || "buddy";
+  const userId = req.user.userId;
 
   if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
     return res.status(400).json({ error: "prompt is required" });
+  }
+
+  if (!canAccessAgent(agentId, userId)) {
+    return res.status(403).json({ error: "Access denied to this agent" });
   }
 
   // Return immediately so the client isn't waiting on the HTTP response
@@ -348,51 +426,58 @@ app.post("/api/prompt", (req, res) => {
 
   // Process asynchronously
   (async () => {
+    const send = (data) => broadcastToUser(userId, data);
+
     try {
       // Signal that Buddy is thinking
-      broadcast({ type: "processing", status: true });
+      send({ type: "processing", status: true });
 
-      // Handle agent switching
-      if (agentId !== currentAgentId) {
-        const agent = getAgent(agentId);
-        if (agent) {
-          // Clear the canvas when switching agents
-          broadcast({
-            type: "canvas_command",
-            command: "canvas_set_mode",
-            params: { mode: "clear" },
-          });
+      // Update this user's WS connection agentId
+      for (const [ws, conn] of wsConnections) {
+        if (conn.userId === userId) conn.agentId = agentId;
+      }
 
-          // Notify clients of agent switch
-          broadcast({
-            type: "agent_switch",
-            agent: {
-              id: agent.id,
-              name: agent.name,
-              avatar: agent.avatar,
-              avatar_config: agent.avatar_config,
-              voice_config: agent.voice_config,
-            },
-          });
+      // Agent switch notification
+      const agent = getAgent(agentId);
+      if (agent) {
+        send({
+          type: "canvas_command",
+          command: "canvas_set_mode",
+          params: { mode: "clear" },
+        });
+        send({
+          type: "agent_switch",
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            avatar: agent.avatar,
+            avatar_config: agent.avatar_config,
+            voice_config: agent.voice_config,
+          },
+        });
+      }
 
-          currentAgentId = agentId;
-        }
+      // Find a WS for confirmation callbacks
+      let clientWs = null;
+      for (const [ws, conn] of wsConnections) {
+        if (conn.userId === userId) { clientWs = ws; break; }
       }
 
       // Run through Claude with tool-use loop
-      const result = await processPrompt(prompt.trim(), agentId, { requestConfirmation });
+      const result = await processPrompt(prompt.trim(), agentId, userId, {
+        requestConfirmation: clientWs
+          ? (command, reason) => requestConfirmationForClient(clientWs, command, reason)
+          : undefined,
+      });
 
       // Split canvas commands and subtitle, broadcast in order
-      splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
+      splitAndBroadcast(result.allToolCalls, result.finalTextContent, send);
     } catch (error) {
       console.error("Error processing prompt:", error);
 
       // Send an error subtitle so the user knows something went wrong
-      broadcast({
-        type: "subtitle",
-        text: "Sorry, something went wrong on my end. Try again?",
-      });
-      broadcast({ type: "processing", status: false });
+      send({ type: "subtitle", text: "Sorry, something went wrong on my end. Try again?" });
+      send({ type: "processing", status: false });
     }
   })();
 });
@@ -417,7 +502,6 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws, req) => {
-  // WebSocket auth — verify JWT from query param
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const decoded = token ? verifyToken(token) : null;
@@ -425,21 +509,15 @@ wss.on("connection", (ws, req) => {
     ws.close(4001, "Unauthorized");
     return;
   }
-  ws.user = decoded;
 
+  wsConnections.set(ws, { userId: decoded.userId, agentId: null });
   console.log(`WebSocket client connected: ${decoded.username}`);
 
-  // Handle binary messages (file uploads) and text messages
   ws.on("message", async (data, isBinary) => {
-    // Binary message = file upload
-    if (isBinary) {
-      // Binary protocol not implemented yet — placeholder for future mobile uploads
-      return;
-    }
-
-    // Text messages (JSON)
+    if (isBinary) return;
     try {
       const msg = JSON.parse(data.toString());
+      const conn = wsConnections.get(ws);
 
       if (msg.type === "confirm_response") {
         const resolver = pendingConfirmations.get(msg.id);
@@ -455,26 +533,28 @@ wss.on("connection", (ws, req) => {
         const filePath = join(DIRS.shared, msg.filename);
         writeFileSync(filePath, fileBuffer);
 
+        const agentId = conn.agentId || "buddy";
         const userMessage = msg.text
           ? `${msg.text}\n\n[File uploaded to: ${filePath}]`
           : `[File uploaded to: ${filePath}] (filename: ${msg.filename})`;
 
-        broadcast({ type: "processing", status: true });
+        sendTo(ws, { type: "processing", status: true });
         try {
-          const result = await processPrompt(userMessage, currentAgentId, { requestConfirmation });
-          splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
+          const result = await processPrompt(userMessage, agentId, conn.userId, {
+            requestConfirmation: (command, reason) => requestConfirmationForClient(ws, command, reason),
+          });
+          splitAndBroadcast(result.allToolCalls, result.finalTextContent, (d) => sendTo(ws, d));
         } catch (err) {
           console.error("Error processing file upload:", err);
-          broadcast({ type: "subtitle", text: "Sorry, something went wrong processing that file." });
-          broadcast({ type: "processing", status: false });
+          sendTo(ws, { type: "subtitle", text: "Sorry, something went wrong processing that file." });
+          sendTo(ws, { type: "processing", status: false });
         }
       }
-    } catch {
-      // Not JSON — ignore
-    }
+    } catch {}
   });
 
   ws.on("close", () => {
+    wsConnections.delete(ws);
     console.log("WebSocket client disconnected");
   });
 
