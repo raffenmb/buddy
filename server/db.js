@@ -69,6 +69,30 @@ db.exec(`
     created_at    TEXT DEFAULT (datetime('now')),
     updated_at    TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS schedules (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    schedule_type   TEXT NOT NULL CHECK(schedule_type IN ('one-shot', 'recurring')),
+    run_at          TEXT,
+    cron_expression TEXT,
+    next_run_at     TEXT,
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS pending_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL,
+    messages    TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now')),
+    delivered   INTEGER DEFAULT 0
+  );
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
@@ -82,6 +106,9 @@ try { db.exec("ALTER TABLE agents ADD COLUMN user_id TEXT REFERENCES users(id) O
 
 // Add user_id to sessions
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE"); } catch {}
+
+// Index for scheduler polling
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at) WHERE enabled = 1"); } catch {}
 
 // Seed default session
 db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('default')").run();
