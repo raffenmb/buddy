@@ -2,11 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useAlert } from "../AlertModal";
 import { apiFetch } from "../../lib/api";
 
-const BUILT_IN_TOOLS = [
-  { name: "search_youtube", label: "YouTube Search" },
-  { name: "remember_fact", label: "Remember Facts" },
-];
-
 function ToggleSwitch({ checked, onChange }) {
   return (
     <button
@@ -52,51 +47,27 @@ export default function ToolSelector({ enabledTools, onChange }) {
     }
   }
 
-  // Build unified list: built-in tools first, then custom skills
-  const allItems = [
-    ...BUILT_IN_TOOLS.map((t) => ({
-      ...t,
-      type: "built-in",
-    })),
-    ...skills.map((s) => ({ name: s.folderName, label: s.name, description: s.description, type: "custom" })),
-  ];
+  // All items are skills
+  const allItems = skills.map((s) => ({
+    name: s.folderName,
+    label: s.name,
+    description: s.description,
+  }));
 
-  // When enabledTools is null: built-in tools ON, custom skills OFF
-  const isNullMode = enabledTools === null;
-  const selected = isNullMode
-    ? BUILT_IN_TOOLS.map((t) => t.name)
-    : enabledTools || [];
+  const selected = enabledTools || [];
 
-  function isChecked(itemName, itemType) {
-    if (isNullMode && itemType === "built-in") return true;
-    if (isNullMode && itemType === "custom") return false;
+  function isChecked(itemName) {
     return selected.includes(itemName);
   }
 
-  function toggle(itemName, itemType) {
+  function toggle(itemName) {
     let next;
-
-    if (isNullMode) {
-      // Transitioning from null to explicit array
-      if (itemType === "built-in") {
-        // Turning OFF a built-in
-        next = BUILT_IN_TOOLS.map((t) => t.name).filter((n) => n !== itemName);
-      } else {
-        // Turning ON a custom skill
-        next = [...BUILT_IN_TOOLS.map((t) => t.name), itemName];
-      }
-    } else if (selected.includes(itemName)) {
+    if (selected.includes(itemName)) {
       next = selected.filter((n) => n !== itemName);
     } else {
       next = [...selected, itemName];
     }
-
-    // If only built-in tools are ON, return to null
-    const builtInNames = BUILT_IN_TOOLS.map((t) => t.name);
-    const allBuiltInOn = builtInNames.every((n) => next.includes(n));
-    const onlyBuiltIn = next.length === builtInNames.length && allBuiltInOn;
-
-    onChange(onlyBuiltIn ? null : next);
+    onChange(next.length > 0 ? next : null);
   }
 
   async function handleDeleteSkill(folderName) {
@@ -109,10 +80,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
       // Remove from enabled_tools if present
       if (enabledTools && enabledTools.includes(folderName)) {
         const next = enabledTools.filter((n) => n !== folderName);
-        const builtInNames = BUILT_IN_TOOLS.map((t) => t.name);
-        const allBuiltInOn = builtInNames.every((n) => next.includes(n));
-        const onlyBuiltIn = next.length === builtInNames.length && allBuiltInOn;
-        onChange(onlyBuiltIn ? null : next);
+        onChange(next.length > 0 ? next : null);
       }
     } catch (err) {
       showAlert("Failed to delete skill: " + err.message);
@@ -166,12 +134,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
       await loadSkills();
 
       // Auto-enable the new skill for this agent
-      let next;
-      if (isNullMode) {
-        next = [...BUILT_IN_TOOLS.map((t) => t.name), folderName];
-      } else {
-        next = [...(enabledTools || []), folderName];
-      }
+      const next = [...(enabledTools || []), folderName];
       onChange(next);
     } catch (err) {
       setUploadError(err.message);
@@ -318,7 +281,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
 
   return (
     <div>
-      {/* Unified toggle list */}
+      {/* Skills toggle list */}
       <div className="flex flex-col gap-1">
         {allItems.map((item) => (
           <div
@@ -336,21 +299,11 @@ export default function ToolSelector({ enabledTools, onChange }) {
                 <span
                   className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
                   style={{
-                    backgroundColor:
-                      item.type === "custom"
-                        ? "var(--color-accent)"
-                        : "var(--color-bg-raised)",
-                    color:
-                      item.type === "built-in"
-                        ? "var(--color-text-muted)"
-                        : "#FFFFFF",
-                    border:
-                      item.type === "built-in"
-                        ? "1px solid var(--color-border)"
-                        : "none",
+                    backgroundColor: "var(--color-accent)",
+                    color: "#FFFFFF",
                   }}
                 >
-                  {item.type === "custom" ? "Custom" : "Built-in"}
+                  Skill
                 </span>
               </div>
               {item.description && (
@@ -364,29 +317,25 @@ export default function ToolSelector({ enabledTools, onChange }) {
             </div>
 
             <div className="flex items-center gap-2">
-              {item.type === "custom" && (
-                <>
-                  <button
-                    onClick={() => handleEditSkill(item.name)}
-                    className="text-xs px-2 py-1 rounded-lg transition-colors"
-                    style={{ color: "var(--color-accent)" }}
-                    title="Edit skill SKILL.md"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSkill(item.name)}
-                    className="text-xs px-2 py-1 rounded-lg transition-colors"
-                    style={{ color: "#EF4444" }}
-                    title="Delete skill from server"
-                  >
-                    Delete
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => handleEditSkill(item.name)}
+                className="text-xs px-2 py-1 rounded-lg transition-colors"
+                style={{ color: "var(--color-accent)" }}
+                title="Edit skill SKILL.md"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDeleteSkill(item.name)}
+                className="text-xs px-2 py-1 rounded-lg transition-colors"
+                style={{ color: "#EF4444" }}
+                title="Delete skill from server"
+              >
+                Delete
+              </button>
               <ToggleSwitch
-                checked={isChecked(item.name, item.type)}
-                onChange={() => toggle(item.name, item.type)}
+                checked={isChecked(item.name)}
+                onChange={() => toggle(item.name)}
               />
             </div>
           </div>
@@ -397,7 +346,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
             className="text-sm py-2 px-1"
             style={{ color: "var(--color-text-muted)" }}
           >
-            No tools available.
+            No skills installed.
           </div>
         )}
       </div>

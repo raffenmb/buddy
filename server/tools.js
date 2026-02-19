@@ -343,44 +343,6 @@ const tools = [
     },
   },
   {
-    name: "search_youtube",
-    description:
-      "Search YouTube for videos. Returns real video URLs with titles and durations. ALWAYS use this tool to find videos instead of guessing YouTube URLs. After getting results, use canvas_play_media with the returned URL to embed the video.",
-    input_schema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Search query for YouTube (e.g. 'how to make sourdough bread').",
-        },
-        max_results: {
-          type: "integer",
-          description: "Number of results to return (default 3, max 5).",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "remember_fact",
-    description:
-      "Remember a fact about the user for future conversations. Use this when the user shares personal information like their name, preferences, job, interests, or anything worth recalling later. Facts persist across sessions.",
-    input_schema: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "A short, descriptive key for the fact (e.g. 'name', 'favorite_color', 'job').",
-        },
-        value: {
-          type: "string",
-          description: "The fact to remember (e.g. 'Matt', 'blue', 'software engineer').",
-        },
-      },
-      required: ["key", "value"],
-    },
-  },
-  {
     name: "shell_exec",
     description:
       "Execute a shell command on the host machine. Has access to all installed utilities (git, node, python3, curl, ffmpeg, etc.). Destructive commands (rm, mv, chmod, etc.) require user confirmation before executing. Use for running scripts, data processing, installing packages, system tasks, and any command-line operation.",

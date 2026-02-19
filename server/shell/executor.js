@@ -10,7 +10,12 @@
 
 import { spawn } from "child_process";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { validateCommand } from "./guards.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SERVER_NODE_MODULES = join(__dirname, "..", "node_modules");
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 50_000; // 50KB per stream
@@ -88,7 +93,11 @@ export async function executeShell(command, options) {
   return new Promise((resolve) => {
     const proc = spawn("sh", ["-c", command], {
       cwd,
-      env: { ...process.env, HOME: homedir() },
+      env: {
+        ...process.env,
+        HOME: homedir(),
+        NODE_PATH: [SERVER_NODE_MODULES, process.env.NODE_PATH].filter(Boolean).join(":"),
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
 

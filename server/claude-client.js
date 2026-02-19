@@ -4,14 +4,13 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import yts from "yt-search";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import tools, { PLATFORM_TOOL_NAMES } from "./tools.js";
 import { listSkills } from "./skills.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
-import { getAgent, getMemories, setMemory, getIdentity, getUserInfo, updateAgent } from "./agents.js";
+import { getAgent, getMemories, getIdentity, getUserInfo, updateAgent } from "./agents.js";
 import { executeShell } from "./shell/executor.js";
 import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
 import { startProcess, stopProcess, getProcessStatus, getProcessLogs } from "./shell/processManager.js";
@@ -27,24 +26,6 @@ const systemPromptTemplate = readFileSync(
   join(__dirname, "system-prompt.md"),
   "utf-8"
 );
-
-async function executeYouTubeSearch(input) {
-  try {
-    const maxResults = Math.min(input.max_results || 3, 5);
-    const result = await yts(input.query);
-    const videos = result.videos.slice(0, maxResults).map((v) => ({
-      title: v.title,
-      url: v.url,
-      duration: v.timestamp,
-      views: v.views,
-      author: v.author.name,
-    }));
-    return { videos };
-  } catch (err) {
-    console.error("YouTube search error:", err);
-    return { error: "YouTube search failed", videos: [] };
-  }
-}
 
 /**
  * Build the full system prompt from base template + per-agent personality,
@@ -72,6 +53,8 @@ function buildSystemPrompt(agent, memories) {
     .replace("{{user_info}}", userInfoSection)
     .replace("{{memories}}", memoriesSection)
     .trim();
+
+  basePrompt += `\n\nYour agent ID is: ${agent.id}`;
 
   // Inject metadata-only skill listing — full prompts loaded on-demand via read_file tool
   const enabledTools = parseEnabledTools(agent.enabled_tools);
@@ -193,21 +176,6 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
     // Build tool_result blocks
     const toolResults = await Promise.all(
       toolUseBlocks.map(async (toolUse) => {
-        if (toolUse.name === "search_youtube") {
-          return {
-            type: "tool_result",
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(await executeYouTubeSearch(toolUse.input)),
-          };
-        }
-        if (toolUse.name === "remember_fact") {
-          setMemory(agentId, toolUse.input.key, toolUse.input.value);
-          return {
-            type: "tool_result",
-            tool_use_id: toolUse.id,
-            content: JSON.stringify({ status: "remembered" }),
-          };
-        }
         if (toolUse.name === "shell_exec") {
           const result = await executeShell(toolUse.input.command, {
             cwd: toolUse.input.cwd,

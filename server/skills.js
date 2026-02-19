@@ -3,9 +3,13 @@
  * parses YAML frontmatter, and provides CRUD operations.
  */
 
-import { mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync } from "fs";
-import { join } from "path";
+import { mkdirSync, cpSync, existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync } from "fs";
+import { fileURLToPath } from "url";
+import { join, dirname } from "path";
 import { DIRS } from "./config.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_SKILLS_DIR = join(__dirname, "default-skills");
 
 const SKILLS_DIR = DIRS.skills;
 
@@ -75,8 +79,31 @@ function scanSkills() {
     .filter(Boolean);
 }
 
-// Initial scan on module load
+/**
+ * Seed default skills from server/default-skills/ into ~/.buddy/skills/.
+ * Only copies folders that don't already exist (preserves user modifications).
+ */
+function seedDefaultSkills() {
+  if (!existsSync(DEFAULT_SKILLS_DIR)) return;
+
+  let seeded = false;
+  for (const entry of readdirSync(DEFAULT_SKILLS_DIR)) {
+    const src = join(DEFAULT_SKILLS_DIR, entry);
+    if (!statSync(src).isDirectory()) continue;
+
+    const dest = join(SKILLS_DIR, entry);
+    if (existsSync(dest)) continue;
+
+    cpSync(src, dest, { recursive: true });
+    seeded = true;
+  }
+
+  if (seeded) scanSkills();
+}
+
+// Initial scan on module load, then seed defaults
 scanSkills();
+seedDefaultSkills();
 
 /**
  * List all valid installed skills.

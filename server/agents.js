@@ -53,12 +53,47 @@ db.prepare(`
   VALUES ('buddy', 'Buddy', ?, ?)
 `).run(defaultModel, BUDDY_PERSONALITY);
 
-// Ensure Buddy has sandbox tools enabled (idempotent — only sets if currently null)
+// Ensure Buddy has default skills enabled (idempotent — only sets if currently null)
 const buddyAgent = db.prepare("SELECT enabled_tools FROM agents WHERE id = 'buddy'").get();
 if (!buddyAgent.enabled_tools) {
   db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy'").run(
-    JSON.stringify(["search_youtube", "remember_fact", "shell_exec", "read_file", "write_file", "list_directory"])
+    JSON.stringify(["search-youtube", "remember-fact"])
   );
+}
+
+// ─── Migration: rename old tool names to skill folder names ──────────────────
+
+const TOOL_RENAMES = { search_youtube: "search-youtube", remember_fact: "remember-fact" };
+const PLATFORM_TOOLS = [
+  "shell_exec", "read_file", "write_file", "list_directory",
+  "process_start", "process_stop", "process_status", "process_logs",
+  "spawn_agent", "create_agent_template",
+];
+
+for (const agent of db.prepare("SELECT id, enabled_tools FROM agents").all()) {
+  if (!agent.enabled_tools) continue;
+  let tools;
+  try {
+    tools = JSON.parse(agent.enabled_tools);
+  } catch { continue; }
+  if (!Array.isArray(tools)) continue;
+
+  let changed = false;
+  tools = tools.map((name) => {
+    if (TOOL_RENAMES[name]) { changed = true; return TOOL_RENAMES[name]; }
+    return name;
+  });
+  // Remove platform tool names — they're always on and redundant in enabled_tools
+  const before = tools.length;
+  tools = tools.filter((name) => !PLATFORM_TOOLS.includes(name));
+  if (tools.length !== before) changed = true;
+
+  if (changed) {
+    db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = ?").run(
+      tools.length > 0 ? JSON.stringify(tools) : null,
+      agent.id
+    );
+  }
 }
 
 // ─── Agent CRUD ───────────────────────────────────────────────────────────────
