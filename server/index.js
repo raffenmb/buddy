@@ -19,33 +19,29 @@ import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillCont
 import { resetSession } from "./session.js";
 import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
+import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
-const AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
-app.use(
-  cors(
-    AUTH_TOKEN
-      ? { origin: true, credentials: true }
-      : { origin: "http://localhost:5173", credentials: true }
-  )
-);
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-// Auth middleware — skip if AUTH_TOKEN not set (dev mode)
 function authMiddleware(req, res, next) {
-  if (!AUTH_TOKEN) return next();
+  // Login and register are exempt (register handles its own admin check)
+  if (req.path === "/auth/login" || req.path === "/auth/register") return next();
 
   const header = req.headers.authorization;
-  if (!header) return res.status(401).json({ error: "Authorization header required" });
+  if (!header) return res.status(401).json({ error: "Authorization required" });
 
   const token = header.replace(/^Bearer\s+/i, "");
-  if (token !== AUTH_TOKEN) return res.status(403).json({ error: "Invalid token" });
+  const decoded = verifyToken(token);
+  if (!decoded) return res.status(401).json({ error: "Invalid or expired token" });
 
+  req.user = decoded; // { userId, username, isAdmin }
   next();
 }
 
@@ -92,6 +88,77 @@ function requestConfirmation(command, reason) {
     }, 60000);
   });
 }
+
+// ─── Auth Routes (exempt from auth middleware) ──────────────────────────────
+
+app.post("/api/auth/login", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password required" });
+  }
+
+  const user = getUserByUsername(username);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: "Invalid username or password" });
+  }
+
+  const token = signToken(user);
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.display_name,
+      isAdmin: !!user.is_admin,
+    },
+  });
+});
+
+app.post("/api/auth/register", (req, res) => {
+  const { username, password, displayName } = req.body;
+
+  // Only allow if: no users exist (first-run), or requester is admin
+  const userCount = getUserCount();
+  if (userCount > 0 && (!req.user || !req.user.isAdmin)) {
+    return res.status(403).json({ error: "Only admins can create accounts" });
+  }
+
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ error: "username, password, and displayName required" });
+  }
+  if (!/^[a-z0-9_-]+$/.test(username.toLowerCase())) {
+    return res.status(400).json({ error: "Username must be lowercase alphanumeric" });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters" });
+  }
+
+  try {
+    const isAdmin = userCount === 0;
+    const user = createUser({ username, password, displayName, isAdmin });
+    const token = signToken({ id: user.id, username: user.username, is_admin: isAdmin ? 1 : 0 });
+    res.status(201).json({
+      token,
+      user: { id: user.id, username: user.username, displayName: user.displayName, isAdmin },
+    });
+  } catch (err) {
+    if (err.message.includes("UNIQUE constraint")) {
+      return res.status(409).json({ error: "Username already taken" });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/auth/me", (req, res) => {
+  const user = getUserById(req.user.userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  res.json({
+    id: user.id,
+    username: user.username,
+    displayName: user.display_name,
+    isAdmin: !!user.is_admin,
+  });
+});
 
 // ─── Agent Routes ─────────────────────────────────────────────────────────────
 
@@ -343,17 +410,17 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws, req) => {
-  // WebSocket auth — check token query param
-  if (AUTH_TOKEN) {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const token = url.searchParams.get("token");
-    if (token !== AUTH_TOKEN) {
-      ws.close(4001, "Unauthorized");
-      return;
-    }
+  // WebSocket auth — verify JWT from query param
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get("token");
+  const decoded = token ? verifyToken(token) : null;
+  if (!decoded) {
+    ws.close(4001, "Unauthorized");
+    return;
   }
+  ws.user = decoded;
 
-  console.log("WebSocket client connected");
+  console.log(`WebSocket client connected: ${decoded.username}`);
 
   // Handle binary messages (file uploads) and text messages
   ws.on("message", async (data, isBinary) => {
