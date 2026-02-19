@@ -6,6 +6,7 @@
 
 import { createInterface } from "readline";
 import { createUser, getUserCount } from "./auth.js";
+import { seedBuddyAgent } from "./agents.js";
 
 export async function runSetupIfNeeded() {
   if (getUserCount() > 0) return;
@@ -41,6 +42,7 @@ export async function runSetupIfNeeded() {
     }
 
     const user = createUser({ username, password, displayName, isAdmin: true });
+    seedBuddyAgent(user.id);
     console.log(`\n  Admin account "${user.username}" created. Starting server...\n`);
   } finally {
     rl.close();

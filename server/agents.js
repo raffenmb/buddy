@@ -1,7 +1,8 @@
 /**
  * Agent registry — CRUD for agents, per-agent memory, and file-based
  * identity/user prompts, all backed by SQLite + filesystem.
- * Seeds the default "buddy" agent on import.
+ * Seeds the default "buddy" agent on import (unclaimed for backward-compat).
+ * Call seedBuddyAgent(userId) to claim or create a buddy for a specific user.
  */
 
 import db from "./db.js";
@@ -48,17 +49,48 @@ if (!existsSync(join(buddyDir, "user.md"))) {
 
 const defaultModel = process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929";
 
-db.prepare(`
-  INSERT OR IGNORE INTO agents (id, name, model, system_prompt)
-  VALUES ('buddy', 'Buddy', ?, ?)
-`).run(defaultModel, BUDDY_PERSONALITY);
+export function seedBuddyAgent(userId) {
+  const existingBuddy = db.prepare(
+    "SELECT id, user_id FROM agents WHERE id = 'buddy' AND (user_id = ? OR user_id IS NULL)"
+  ).get(userId);
+  if (existingBuddy) {
+    // If it's unclaimed, claim it
+    if (!existingBuddy.user_id) {
+      db.prepare("UPDATE agents SET user_id = ? WHERE id = 'buddy' AND user_id IS NULL").run(userId);
+    }
+    return;
+  }
 
-// Ensure Buddy has default skills enabled (idempotent — only sets if currently null)
-const buddyAgent = db.prepare("SELECT enabled_tools FROM agents WHERE id = 'buddy'").get();
-if (!buddyAgent.enabled_tools) {
-  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy'").run(
+  // Check if the plain 'buddy' id is taken by another user
+  const legacyBuddy = db.prepare("SELECT id, user_id FROM agents WHERE id = 'buddy'").get();
+  if (legacyBuddy) return; // buddy id taken, skip
+
+  db.prepare(`
+    INSERT INTO agents (id, name, model, system_prompt, user_id)
+    VALUES ('buddy', 'Buddy', ?, ?, ?)
+  `).run(defaultModel, BUDDY_PERSONALITY, userId);
+
+  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy' AND enabled_tools IS NULL").run(
     JSON.stringify(["search-youtube", "remember-fact"])
   );
+
+  const dir = ensureAgentDir("buddy");
+  if (!existsSync(join(dir, "identity.md"))) {
+    writeFileSync(join(dir, "identity.md"), BUDDY_PERSONALITY, "utf-8");
+  }
+  if (!existsSync(join(dir, "user.md"))) {
+    writeFileSync(join(dir, "user.md"), "", "utf-8");
+  }
+}
+
+// Backward-compat: seed buddy without user for fresh installs
+const buddyExists = db.prepare("SELECT id FROM agents WHERE id = 'buddy'").get();
+if (!buddyExists) {
+  db.prepare(`INSERT INTO agents (id, name, model, system_prompt) VALUES ('buddy', 'Buddy', ?, ?)`).run(defaultModel, BUDDY_PERSONALITY);
+  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy' AND enabled_tools IS NULL").run(JSON.stringify(["search-youtube", "remember-fact"]));
+  const dir = ensureAgentDir("buddy");
+  if (!existsSync(join(dir, "identity.md"))) writeFileSync(join(dir, "identity.md"), BUDDY_PERSONALITY, "utf-8");
+  if (!existsSync(join(dir, "user.md"))) writeFileSync(join(dir, "user.md"), "", "utf-8");
 }
 
 // ─── Migration: rename old tool names to skill folder names ──────────────────
@@ -102,22 +134,22 @@ export function getAgent(id) {
   return db.prepare("SELECT * FROM agents WHERE id = ?").get(id);
 }
 
-export function listAgents() {
+export function listAgents(userId) {
   return db.prepare(
-    "SELECT id, name, model, avatar, enabled_tools, avatar_config, voice_config FROM agents"
-  ).all();
+    "SELECT id, name, model, avatar, enabled_tools, avatar_config, voice_config, user_id FROM agents WHERE user_id = ? OR user_id IS NULL"
+  ).all(userId);
 }
 
-export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info }) {
+export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info, userId }) {
   const m = model || defaultModel;
   const sp = system_prompt || DEFAULT_PERSONALITY;
   const av = avatar_config ? JSON.stringify(avatar_config) : "{}";
   const vc = voice_config ? JSON.stringify(voice_config) : "{}";
 
   db.prepare(`
-    INSERT INTO agents (id, name, model, system_prompt, avatar_config, voice_config)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, name, m, sp, av, vc);
+    INSERT INTO agents (id, name, model, system_prompt, avatar_config, voice_config, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, m, sp, av, vc, userId || null);
 
   // Create folder + core files (identity.md holds personality only)
   const dir = ensureAgentDir(id);
@@ -153,9 +185,14 @@ export function updateAgent(id, fields) {
   return db.prepare(`UPDATE agents SET ${sets.join(", ")} WHERE id = ?`).run(...values);
 }
 
-export function deleteAgent(id) {
+export function deleteAgent(id, userId) {
   if (id === "buddy") {
     throw new Error("Cannot delete the default buddy agent");
+  }
+  const agent = getAgent(id);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.user_id && agent.user_id !== userId) {
+    throw new Error("Cannot delete another user's agent");
   }
   db.prepare("DELETE FROM agents WHERE id = ?").run(id);
 
@@ -164,6 +201,15 @@ export function deleteAgent(id) {
   if (existsSync(dir)) {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// ─── Access Control ──────────────────────────────────────────────────────────
+
+export function canAccessAgent(agentId, userId) {
+  const agent = getAgent(agentId);
+  if (!agent) return false;
+  if (!agent.user_id) return true; // Shared agent
+  return agent.user_id === userId;
 }
 
 // ─── Agent Files ─────────────────────────────────────────────────────────────
