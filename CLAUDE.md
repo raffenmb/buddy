@@ -60,6 +60,9 @@ The server provides **platform primitives** (built-in tools) that give Buddy ful
 | `process_logs` | Tail stdout/stderr logs from managed processes |
 | `spawn_agent` | Delegate a task to an independent sub-agent worker |
 | `create_agent_template` | Define reusable sub-agent configurations |
+| `create_schedule` | Create one-shot or recurring scheduled events |
+| `list_schedules` | List a user's scheduled events |
+| `delete_schedule` | Remove a scheduled event |
 
 **Skills (per agent via admin UI):**
 - Default skills seeded from `server/default-skills/` on first run (e.g. `search-youtube`, `remember-fact`)
@@ -177,6 +180,8 @@ BUDDY_ENV=production    # Always-on PC — full host access
 | `sessions` | Conversation sessions |
 | `messages` | Session message history |
 | `agent_templates` | Reusable sub-agent configurations (name, system_prompt, allowed_tools, max_turns) |
+| `schedules` | Timed events (one-shot reminders, recurring tasks) |
+| `pending_messages` | Queued responses for offline users from scheduled events |
 
 ## Key Server Modules
 
@@ -195,6 +200,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/shell/processManager.js` — Long-lived background process lifecycle (start, stop, status, logs) at `~/.buddy/processes/`
 - `server/shell/summarizer.js` — Haiku-based output summarization for long command output, log file storage
 - `server/subagent/spawner.js` — Sub-agent template CRUD + `spawnSubAgent()` (calls Agent SDK `query()`, returns result)
+- `server/scheduler.js` — In-process scheduler: 30s polling loop, schedule CRUD, processPrompt trigger, offline message queuing and delivery
 
 ## Key Client Modules
 
