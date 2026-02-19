@@ -8,11 +8,13 @@ import yts from "yt-search";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import tools from "./tools.js";
-import { listSkills, getSkillPrompt } from "./skills.js";
+import tools, { PLATFORM_TOOL_NAMES } from "./tools.js";
+import { listSkills } from "./skills.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
 import { getAgent, getMemories, setMemory, getIdentity, getUserInfo, updateAgent } from "./agents.js";
-import { handleSandboxTool, SANDBOX_TOOL_NAMES } from "./sandbox/toolHandler.js";
+import { executeShell } from "./shell/executor.js";
+import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
+import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const anthropic = new Anthropic();
@@ -68,7 +70,7 @@ function buildSystemPrompt(agent, memories) {
     .replace("{{memories}}", memoriesSection)
     .trim();
 
-  // Inject metadata-only skill listing — full prompts loaded on-demand via read_skill tool
+  // Inject metadata-only skill listing — full prompts loaded on-demand via read_file tool
   const enabledTools = parseEnabledTools(agent.enabled_tools);
   if (enabledTools) {
     const installedSkills = listSkills();
@@ -79,7 +81,6 @@ function buildSystemPrompt(agent, memories) {
     for (const toolName of enabledTools) {
       // Skip built-in tools — they're handled via the tools array, not system prompt
       if (builtInNames.includes(toolName)) continue;
-      if (SANDBOX_TOOL_NAMES.includes(toolName)) continue;
 
       // Check if this is an installed skill
       const skill = installedSkills.find((s) => s.folderName === toolName);
@@ -92,9 +93,9 @@ function buildSystemPrompt(agent, memories) {
     }
 
     if (enabledSkills.length > 0) {
-      basePrompt += "\n\n## Custom Skills\nYou have custom skills available. When a user's request matches a skill's description, call the `read_skill` tool with the skill's folder name to load its full instructions before responding.\n\nAvailable skills:";
+      basePrompt += `\n\n## Custom Skills\nYou have custom skills available at ${DIRS.skills}. When a user's request matches a skill's description, use the read_file tool to read the skill's SKILL.md for full instructions before responding.\n\nAvailable skills:`;
       for (const skill of enabledSkills) {
-        basePrompt += `\n- **${skill.name}** (folder: \`${skill.folderName}\`): ${skill.description}`;
+        basePrompt += `\n- **${skill.name}** (path: \`${join(DIRS.skills, skill.folderName, "SKILL.md")}\`): ${skill.description}`;
       }
     }
 
@@ -126,30 +127,12 @@ function parseEnabledTools(enabledToolsRaw) {
 }
 
 /**
- * Check whether an agent has any custom skills enabled.
- */
-function agentHasCustomSkills(agent) {
-  const enabledTools = parseEnabledTools(agent.enabled_tools);
-  if (!enabledTools) return false;
-
-  const installedSkills = listSkills();
-  const builtInNames = tools.map((t) => t.name);
-  return enabledTools.some(
-    (name) =>
-      !builtInNames.includes(name) &&
-      !SANDBOX_TOOL_NAMES.includes(name) &&
-      installedSkills.some((s) => s.folderName === name)
-  );
-}
-
-/**
  * Process a user prompt through the Claude API with tool-use loop.
  *
  * @param {string} userText - The user's input text.
  * @param {string} agentId - The agent to use for this prompt.
  * @param {Object} [callbacks] - Optional callbacks.
- * @param {Function} [callbacks.sendFile] - Callback to deliver a file to the user.
- * @param {boolean} [callbacks.sandboxAvailable] - Whether the Docker sandbox is running.
+ * @param {Function} [callbacks.requestConfirmation] - Async callback for destructive command approval.
  * @returns {Promise<{allToolCalls: Array, finalTextContent: string}>}
  */
 export async function processPrompt(userText, agentId = "buddy", callbacks = {}) {
@@ -162,30 +145,16 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
   const memories = getMemories(agentId);
   const systemPrompt = buildSystemPrompt(agent, memories);
 
-  // 2. Filter tools based on agent's enabled_tools setting
-  //    - Canvas tools: always included
-  //    - Standard non-canvas tools (search_youtube, remember_fact): included when enabled_tools is null
-  //    - Sandbox tools (shell_exec, etc.): opt-in only — require explicit listing in enabled_tools
-  //    - read_skill: included only when agent has custom skills enabled
-  const hasSkills = agentHasCustomSkills(agent);
-  let agentTools = tools;
+  // 2. Filter tools: canvas always included, platform tools always included, others per enabled_tools
   const enabledTools = parseEnabledTools(agent.enabled_tools);
+  let agentTools;
   if (enabledTools) {
     agentTools = tools.filter(
-      (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name) || (t.name === "read_skill" && hasSkills)
+      (t) => t.name.startsWith("canvas_") || PLATFORM_TOOL_NAMES.includes(t.name) || enabledTools.includes(t.name)
     );
   } else {
-    // null = all standard tools ON, sandbox tools OFF, read_skill OFF (no skills when null)
-    agentTools = tools.filter(
-      (t) => !SANDBOX_TOOL_NAMES.includes(t.name) && t.name !== "read_skill"
-    );
-  }
-
-  // Strip sandbox tools if Docker isn't available
-  if (!callbacks.sandboxAvailable) {
-    agentTools = agentTools.filter(
-      (t) => !SANDBOX_TOOL_NAMES.includes(t.name)
-    );
+    // null = all tools ON
+    agentTools = tools;
   }
 
   // 3. Add user message to session history
@@ -236,33 +205,44 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
             content: JSON.stringify({ status: "remembered" }),
           };
         }
-        if (toolUse.name === "read_skill") {
-          const prompt = getSkillPrompt(toolUse.input.skill_name);
-          if (prompt) {
-            return {
-              type: "tool_result",
-              tool_use_id: toolUse.id,
-              content: prompt,
-            };
-          }
+        if (toolUse.name === "shell_exec") {
+          const result = await executeShell(toolUse.input.command, {
+            cwd: toolUse.input.cwd,
+            timeout: Math.min(toolUse.input.timeout || 30000, 600000),
+            requestConfirmation: callbacks.requestConfirmation,
+          });
           return {
             type: "tool_result",
             tool_use_id: toolUse.id,
-            content: JSON.stringify({ error: `Skill '${toolUse.input.skill_name}' not found.` }),
-            is_error: true,
+            content: JSON.stringify({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }),
+            ...(result.denied && { is_error: true }),
           };
         }
-        if (SANDBOX_TOOL_NAMES.includes(toolUse.name)) {
-          const result = await handleSandboxTool(
-            toolUse.name,
-            toolUse.input,
-            callbacks.sendFile
-          );
+        if (toolUse.name === "read_file") {
+          const result = readFile(toolUse.input.path);
           return {
             type: "tool_result",
             tool_use_id: toolUse.id,
-            content: result.content,
-            ...(result.isError && { is_error: true }),
+            content: result.error ? JSON.stringify({ error: result.error }) : result.content,
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "write_file") {
+          const result = writeFile(toolUse.input.path, toolUse.input.content);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result.error ? JSON.stringify({ error: result.error }) : JSON.stringify({ status: "written", path: toolUse.input.path }),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "list_directory") {
+          const result = listDirectory(toolUse.input.path);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result.error ? JSON.stringify({ error: result.error }) : JSON.stringify(result.entries),
+            ...(result.error && { is_error: true }),
           };
         }
         return {
