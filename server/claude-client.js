@@ -140,25 +140,45 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
     );
   } else {
     // null = all tools ON
-    agentTools = tools;
+    agentTools = [...tools];
   }
 
-  // 3. Add user message to session history
+  // 3. Enable prompt caching — mark the last tool and system prompt with cache_control.
+  //    Cache order is: tools → system → messages. Cached content is reused across
+  //    tool-use loop iterations and across user messages within the 5-minute TTL.
+  const cachedTools = agentTools.map((t, i) =>
+    i === agentTools.length - 1
+      ? { ...t, cache_control: { type: "ephemeral" } }
+      : t
+  );
+  const cachedSystem = [
+    { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
+  ];
+
+  // 4. Add user message to session history
   addUserMessage(userText, agentId);
 
-  // 4. Initial Claude API call
+  // 5. Initial Claude API call
   let response = await anthropic.messages.create({
     model: agent.model,
-    system: systemPrompt,
+    system: cachedSystem,
     messages: getMessages(agentId),
-    tools: agentTools,
+    tools: cachedTools,
     max_tokens: 4096,
   });
+
+  // Log prompt cache performance
+  if (response.usage) {
+    const u = response.usage;
+    if (u.cache_creation_input_tokens || u.cache_read_input_tokens) {
+      console.log(`[cache] write=${u.cache_creation_input_tokens || 0} read=${u.cache_read_input_tokens || 0} uncached=${u.input_tokens}`);
+    }
+  }
 
   // Accumulate all tool calls across loop iterations
   const allToolCalls = [];
 
-  // 5. Tool-use loop: keep going while Claude wants to call tools
+  // 6. Tool-use loop: keep going while Claude wants to call tools
   while (response.stop_reason === "tool_use") {
     // Extract tool_use blocks from the response
     const toolUseBlocks = response.content.filter(
@@ -296,20 +316,20 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
     addAssistantResponse(response, agentId);
     addToolResults(toolResults, agentId);
 
-    // Call Claude again with the updated conversation
+    // Call Claude again with the updated conversation (tools + system cached from first call)
     response = await anthropic.messages.create({
       model: agent.model,
-      system: systemPrompt,
+      system: cachedSystem,
       messages: getMessages(agentId),
-      tools: agentTools,
+      tools: cachedTools,
       max_tokens: 4096,
     });
   }
 
-  // 6. stop_reason === "end_turn" — add the final response to session
+  // 7. stop_reason === "end_turn" — add the final response to session
   addAssistantResponse(response, agentId);
 
-  // 7. Extract text content from the final response
+  // 8. Extract text content from the final response
   const finalTextContent = response.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)

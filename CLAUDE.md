@@ -13,6 +13,7 @@ Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on
 - **Self-evolving** — Buddy creates and modifies its own skills, builds sub-agent templates, and extends its capabilities over time
 - **Conversation-first** — the agent manages itself through conversation, not through admin panels
 - **Skills as the single extensibility layer** — no separate "tool registry." Built-in tools are platform primitives; everything else is a skill (SKILL.md + optional scripts)
+- **Anthropic-only** — Buddy uses only Anthropic Claude models. Setup requires only an Anthropic API key. This lets us use Anthropic-specific features (prompt caching, tool cache, output summarization via Haiku, etc.) without cross-provider compatibility concerns. Multi-provider support may come later, but is not a current design goal.
 
 ## Tech Stack
 
