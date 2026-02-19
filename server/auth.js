@@ -19,7 +19,7 @@ function getJwtSecret() {
     return readFileSync(SECRET_PATH, "utf-8").trim();
   }
   const secret = randomBytes(32).toString("hex");
-  writeFileSync(SECRET_PATH, secret, "utf-8");
+  writeFileSync(SECRET_PATH, secret, { encoding: "utf-8", mode: 0o600 });
   return secret;
 }
 
@@ -55,7 +55,8 @@ export function updateUser(id, fields) {
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       sets.push(`${key} = ?`);
-      values.push(fields[key]);
+      const val = key === "is_admin" ? (fields[key] ? 1 : 0) : fields[key];
+      values.push(val);
     }
   }
   if (fields.password) {
