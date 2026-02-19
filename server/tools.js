@@ -455,6 +455,87 @@ const tools = [
       required: [],
     },
   },
+  {
+    name: "process_start",
+    description:
+      "Start a long-running background process (e.g. dev server, file watcher, build). The process runs detached and you can check its output later with process_logs. Returns a process ID for management.",
+    input_schema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "The shell command to run as a background process.",
+        },
+        cwd: {
+          type: "string",
+          description:
+            "Working directory for the process (default: user home directory).",
+        },
+        name: {
+          type: "string",
+          description:
+            "Human-readable name used as the process ID (e.g. 'dev-server'). Auto-generated if omitted.",
+        },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "process_stop",
+    description:
+      "Stop a running background process by its ID. Sends SIGTERM, then SIGKILL after a grace period.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The process ID to stop (from process_start or process_status).",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "process_status",
+    description:
+      "Get status of managed background processes. Omit the ID to list all tracked processes. Provide an ID to get details for a specific process.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description:
+            "Optional process ID. Omit to list all managed processes.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "process_logs",
+    description:
+      "Read recent output logs of a background process. Returns the last N lines from stdout or stderr.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The process ID to read logs from.",
+        },
+        lines: {
+          type: "integer",
+          description: "Number of recent lines to return (default: 50).",
+        },
+        stream: {
+          type: "string",
+          enum: ["stdout", "stderr"],
+          description:
+            "Which output stream to read (default: stdout).",
+        },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 export const PLATFORM_TOOL_NAMES = [
@@ -462,6 +543,10 @@ export const PLATFORM_TOOL_NAMES = [
   "read_file",
   "write_file",
   "list_directory",
+  "process_start",
+  "process_stop",
+  "process_status",
+  "process_logs",
 ];
 
 export default tools;

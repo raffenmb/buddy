@@ -14,6 +14,8 @@ import { addUserMessage, addAssistantResponse, addToolResults, getMessages } fro
 import { getAgent, getMemories, setMemory, getIdentity, getUserInfo, updateAgent } from "./agents.js";
 import { executeShell } from "./shell/executor.js";
 import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
+import { startProcess, stopProcess, getProcessStatus, getProcessLogs } from "./shell/processManager.js";
+import { maybeSummarize } from "./shell/summarizer.js";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -211,10 +213,12 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
             timeout: Math.min(toolUse.input.timeout || 30000, 600000),
             requestConfirmation: callbacks.requestConfirmation,
           });
+          const combined = [result.stdout, result.stderr].filter(Boolean).join("\n");
+          const { content: summarized, logPath } = await maybeSummarize(combined, "shell output");
           return {
             type: "tool_result",
             tool_use_id: toolUse.id,
-            content: JSON.stringify({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }),
+            content: JSON.stringify({ output: summarized, exitCode: result.exitCode, ...(logPath && { fullOutputPath: logPath }) }),
             ...(result.denied && { is_error: true }),
           };
         }
@@ -242,6 +246,50 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
             type: "tool_result",
             tool_use_id: toolUse.id,
             content: result.error ? JSON.stringify({ error: result.error }) : JSON.stringify(result.entries),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "process_start") {
+          const result = startProcess(toolUse.input.command, {
+            cwd: toolUse.input.cwd,
+            name: toolUse.input.name,
+          });
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "process_stop") {
+          const result = stopProcess(toolUse.input.id);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "process_status") {
+          const result = getProcessStatus(toolUse.input.id);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "process_logs") {
+          const result = getProcessLogs(toolUse.input.id, {
+            lines: toolUse.input.lines,
+            stream: toolUse.input.stream,
+          });
+          const logContent = result.error ? JSON.stringify(result) : result.log;
+          const { content: summarized } = await maybeSummarize(logContent, "process logs");
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result.error ? JSON.stringify(result) : JSON.stringify({ log: summarized, totalLines: result.totalLines }),
             ...(result.error && { is_error: true }),
           };
         }
