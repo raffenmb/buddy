@@ -556,6 +556,72 @@ const tools = [
       required: ["name", "system_prompt"],
     },
   },
+  {
+    name: "create_schedule",
+    description:
+      "Create a scheduled event — a one-shot reminder/deadline or a recurring task. One-shot requires run_at (ISO datetime). Recurring requires cron_expression (standard 5-field cron: minute hour day-of-month month day-of-week). The agent will receive a prompt at the scheduled time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Human-readable name for this schedule (e.g. 'Dentist reminder', 'Weekly lesson plans').",
+        },
+        prompt: {
+          type: "string",
+          description: "The message that will be sent to the agent when this schedule fires.",
+        },
+        schedule_type: {
+          type: "string",
+          enum: ["one-shot", "recurring"],
+          description: "One-shot fires once at run_at time. Recurring fires on the cron schedule.",
+        },
+        run_at: {
+          type: "string",
+          description: "ISO 8601 datetime for one-shot schedules (e.g. '2026-02-20T15:00:00'). Required for one-shot.",
+        },
+        cron_expression: {
+          type: "string",
+          description: "Standard 5-field cron expression for recurring schedules (e.g. '0 17 * * 1' = every Monday at 5pm). Required for recurring.",
+        },
+        agent_id: {
+          type: "string",
+          description: "Agent to handle this schedule. Defaults to the current agent.",
+        },
+      },
+      required: ["name", "prompt", "schedule_type"],
+    },
+  },
+  {
+    name: "list_schedules",
+    description:
+      "List scheduled events for the current user. Shows name, type, next run time, and cron expression.",
+    input_schema: {
+      type: "object",
+      properties: {
+        enabled_only: {
+          type: "boolean",
+          description: "If true (default), only show enabled schedules. Set false to include completed/disabled ones.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "delete_schedule",
+    description:
+      "Delete a scheduled event by its ID. Use list_schedules to find the ID.",
+    input_schema: {
+      type: "object",
+      properties: {
+        schedule_id: {
+          type: "string",
+          description: "The schedule ID to delete (e.g. 'sched-abc123').",
+        },
+      },
+      required: ["schedule_id"],
+    },
+  },
 ];
 
 export const PLATFORM_TOOL_NAMES = [
@@ -569,6 +635,9 @@ export const PLATFORM_TOOL_NAMES = [
   "process_logs",
   "spawn_agent",
   "create_agent_template",
+  "create_schedule",
+  "list_schedules",
+  "delete_schedule",
 ];
 
 export default tools;
