@@ -21,6 +21,7 @@ import { resetSession } from "./session.js";
 import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
+import { startScheduler, deliverPendingMessages } from "./scheduler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -61,6 +62,13 @@ function broadcastToUser(userId, data) {
   for (const [ws, conn] of wsConnections) {
     if (conn.userId === userId && ws.readyState === 1) ws.send(message);
   }
+}
+
+function isUserOnline(userId) {
+  for (const [ws, conn] of wsConnections) {
+    if (conn.userId === userId && ws.readyState === 1) return true;
+  }
+  return false;
 }
 
 // ─── Confirmation Gate ───────────────────────────────────────────────────────
@@ -513,6 +521,29 @@ wss.on("connection", (ws, req) => {
   wsConnections.set(ws, { userId: decoded.userId, agentId: null });
   console.log(`WebSocket client connected: ${decoded.username}`);
 
+  // Deliver any pending messages from schedules that fired while offline
+  const pending = deliverPendingMessages(decoded.userId);
+  if (pending.length > 0) {
+    // Count unique scheduled tasks in the pending batch
+    const scheduledCount = pending.filter(m => m.type === "canvas_command" && m.command === "canvas_show_notification").length;
+    if (scheduledCount > 0) {
+      sendTo(ws, {
+        type: "canvas_command",
+        command: "canvas_show_notification",
+        params: {
+          message: `${scheduledCount} scheduled task${scheduledCount > 1 ? "s" : ""} ran while you were away`,
+          type: "info",
+          duration_ms: 5000,
+        },
+      });
+    }
+    // Replay all queued messages
+    for (const msg of pending) {
+      sendTo(ws, msg);
+    }
+    console.log(`[scheduler] Delivered ${pending.length} pending messages to ${decoded.username}`);
+  }
+
   ws.on("message", async (data, isBinary) => {
     if (isBinary) return;
     try {
@@ -573,5 +604,8 @@ wss.on("connection", (ws, req) => {
     console.log(`WebSocket server ready on ws://localhost:${PORT}`);
     console.log(`Environment: ${process.env.BUDDY_ENV || "development"}`);
     console.log(`Data directory: ${DIRS.root}`);
+
+    // Start the scheduler after server is ready
+    startScheduler({ broadcastToUser, isUserOnline });
   });
 })();
