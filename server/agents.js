@@ -5,12 +5,11 @@
  */
 
 import db from "./db.js";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { join } from "path";
 import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync, rmSync, unlinkSync, statSync } from "fs";
+import { DIRS } from "./config.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AGENTS_DIR = join(__dirname, "agents");
+const AGENTS_DIR = DIRS.agents;
 
 const CORE_FILES = ["identity.md", "user.md"];
 
@@ -58,7 +57,7 @@ db.prepare(`
 const buddyAgent = db.prepare("SELECT enabled_tools FROM agents WHERE id = 'buddy'").get();
 if (!buddyAgent.enabled_tools) {
   db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy'").run(
-    JSON.stringify(["search_youtube", "remember_fact", "shell_exec", "read_file", "write_file", "list_directory", "send_file"])
+    JSON.stringify(["search_youtube", "remember_fact", "shell_exec", "read_file", "write_file", "list_directory"])
   );
 }
 
