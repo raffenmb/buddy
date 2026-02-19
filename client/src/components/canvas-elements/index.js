@@ -5,3 +5,4 @@ export { default as TextBlock } from "./TextBlock";
 export { default as VideoPlayer } from "./VideoPlayer";
 export { default as ImageDisplay } from "./ImageDisplay";
 export { default as Notification } from "./Notification";
+export { default as ActionConfirm } from "./ActionConfirm.jsx";
