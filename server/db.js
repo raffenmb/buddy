@@ -4,11 +4,10 @@
  */
 
 import Database from "better-sqlite3";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { join } from "path";
+import { DIRS } from "./config.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const db = new Database(join(__dirname, "buddy.db"));
+const db = new Database(join(DIRS.root, "buddy.db"));
 
 // Performance + integrity settings
 db.pragma("journal_mode = WAL");
@@ -51,6 +50,15 @@ db.exec(`
     role       TEXT NOT NULL,
     content    TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_templates (
+    name          TEXT PRIMARY KEY,
+    system_prompt TEXT NOT NULL,
+    allowed_tools TEXT DEFAULT '[]',
+    max_turns     INTEGER DEFAULT 10,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now'))
   );
 `);
 
