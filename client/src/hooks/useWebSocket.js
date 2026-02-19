@@ -24,8 +24,7 @@ function getWsUrl() {
 }
 
 export default function useWebSocket() {
-  const { dispatch } = useBuddy();
-  const wsRef = useRef(null);
+  const { dispatch, wsRef } = useBuddy();
   const reconnectTimeoutRef = useRef(null);
   const backoffRef = useRef(1000);
 

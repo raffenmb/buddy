@@ -1,22 +1,5 @@
 import { useState, useCallback } from "react";
-
-const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
-
-function getWsUrl() {
-  if (import.meta.env.VITE_WS_URL) {
-    const base = import.meta.env.VITE_WS_URL;
-    return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
-  }
-
-  if (import.meta.env.DEV) {
-    const base = "ws://localhost:3001";
-    return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
-  }
-
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const base = `${proto}//${window.location.host}`;
-  return AUTH_TOKEN ? `${base}?token=${AUTH_TOKEN}` : base;
-}
+import { useBuddy } from "../../context/BuddyState";
 
 const STATUS_BORDER_COLORS = {
   pending: "#F59E0B",
@@ -36,6 +19,7 @@ const STATUS_MESSAGES = {
 };
 
 export default function ActionConfirm({ id, title, command, reason, context }) {
+  const { wsRef } = useBuddy();
   const [status, setStatus] = useState("pending");
 
   const handleResponse = useCallback(
@@ -43,21 +27,19 @@ export default function ActionConfirm({ id, title, command, reason, context }) {
       setStatus(approved ? "approved" : "denied");
 
       try {
-        const ws = new WebSocket(getWsUrl());
-        ws.addEventListener("open", () => {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(
             JSON.stringify({ type: "confirm_response", id, approved })
           );
-          ws.close();
-        });
-        ws.addEventListener("error", () => {
-          console.error("ActionConfirm: WebSocket error sending response");
-        });
+        } else {
+          console.error("ActionConfirm: WebSocket not connected");
+        }
       } catch (err) {
         console.error("ActionConfirm: failed to send response", err);
       }
     },
-    [id]
+    [id, wsRef]
   );
 
   const borderColor = STATUS_BORDER_COLORS[status];

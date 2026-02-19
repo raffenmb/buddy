@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer } from "react";
+import { createContext, useContext, useReducer, useRef } from "react";
 
 const initialState = {
   avatar: { isTalking: false },
@@ -184,9 +184,10 @@ const BuddyContext = createContext(null);
 
 export function BuddyProvider({ children }) {
   const [state, dispatch] = useReducer(buddyReducer, initialState);
+  const wsRef = useRef(null);
 
   return (
-    <BuddyContext.Provider value={{ state, dispatch }}>
+    <BuddyContext.Provider value={{ state, dispatch, wsRef }}>
       {children}
     </BuddyContext.Provider>
   );
