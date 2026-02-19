@@ -1,14 +1,13 @@
 /**
- * Custom skills registry — scans server/skills/ for SKILL.md folders,
+ * Custom skills registry — scans ~/.buddy/skills/ for SKILL.md folders,
  * parses YAML frontmatter, and provides CRUD operations.
  */
 
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import { mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync } from "fs";
+import { join } from "path";
+import { DIRS } from "./config.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SKILLS_DIR = join(__dirname, "skills");
+const SKILLS_DIR = DIRS.skills;
 
 // Ensure skills directory exists on startup
 if (!existsSync(SKILLS_DIR)) {
