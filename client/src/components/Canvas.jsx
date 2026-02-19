@@ -9,6 +9,7 @@ import {
   VideoPlayer,
   ImageDisplay,
   Notification as NotificationToast,
+  ActionConfirm,
 } from "./canvas-elements";
 
 const ELEMENT_COMPONENTS = {
@@ -18,6 +19,7 @@ const ELEMENT_COMPONENTS = {
   text: TextBlock,
   media: VideoPlayer,
   image: ImageDisplay,
+  confirmation: ActionConfirm,
 };
 
 function CanvasElement({ element, index }) {

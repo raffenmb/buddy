@@ -134,6 +134,9 @@ function buddyReducer(state, action) {
         }
       };
 
+    case "CANVAS_SHOW_CONFIRMATION":
+      return addElement(state, "confirmation", action.payload);
+
     case "SET_PROCESSING":
       return {
         ...state,
