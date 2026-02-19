@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useBuddy } from "../context/BuddyState";
-
-const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
+import { apiFetch } from "../lib/api";
 
 export default function InputBar() {
   const { state, dispatch } = useBuddy();
@@ -17,13 +16,9 @@ export default function InputBar() {
     setText("");
 
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
-
-      await fetch("/api/prompt", {
+      await apiFetch("/api/prompt", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ prompt: trimmed, agent_id: agent.id })
+        body: { prompt: trimmed, agent_id: agent.id },
       });
     } catch (err) {
       console.error("Failed to send prompt:", err);

@@ -1,13 +1,11 @@
-const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || "";
-
-// Use relative URLs — Vite proxy handles /api in dev, same-origin in production
 const BASE_URL = "";
 
 export async function apiFetch(path, options = {}) {
   const headers = { ...options.headers };
 
-  if (AUTH_TOKEN) {
-    headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+  const token = localStorage.getItem("buddy_token");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   if (options.body && typeof options.body === "object") {
@@ -16,6 +14,11 @@ export async function apiFetch(path, options = {}) {
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+
+  if (res.status === 401) {
+    localStorage.removeItem("buddy_token");
+    window.dispatchEvent(new Event("buddy_auth_expired"));
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
