@@ -7,6 +7,7 @@
 import { createInterface } from "readline";
 import { createUser, getUserCount } from "./auth.js";
 import { seedBuddyAgent } from "./agents.js";
+import db from "./db.js";
 
 export async function runSetupIfNeeded() {
   if (getUserCount() > 0) return;
@@ -43,6 +44,11 @@ export async function runSetupIfNeeded() {
 
     const user = createUser({ username, password, displayName, isAdmin: true });
     seedBuddyAgent(user.id);
+
+    // Claim legacy single-user data for the new admin
+    db.prepare("UPDATE sessions SET user_id = ? WHERE id = 'default' AND user_id IS NULL").run(user.id);
+    db.prepare("UPDATE agents SET user_id = ? WHERE user_id IS NULL").run(user.id);
+
     console.log(`\n  Admin account "${user.username}" created. Starting server...\n`);
   } finally {
     rl.close();
