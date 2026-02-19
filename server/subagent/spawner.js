@@ -1,27 +1,24 @@
 /**
- * Sub-agent spawner — forks worker.js as a child process to run
- * independent Claude API conversations for delegated tasks.
+ * Sub-agent spawner — uses the Claude Agent SDK to run independent
+ * sub-agent conversations for delegated tasks.
  *
  * Exports template CRUD (backed by SQLite agent_templates table)
- * and spawnSubAgent() which forks a worker, sends a task, and
- * returns the result.
+ * and spawnSubAgent() which calls the Agent SDK's query() function
+ * and returns the result.
  */
 
-import { fork } from "child_process";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { homedir } from "os";
 import db from "../db.js";
-import tools from "../tools.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = join(__dirname, "worker.js");
-
-// Default tools available to sub-agents
+// Default tools available to sub-agents (Agent SDK tool names)
 const DEFAULT_ALLOWED_TOOLS = [
-  "shell_exec",
-  "read_file",
-  "write_file",
-  "list_directory",
+  "Read",
+  "Write",
+  "Edit",
+  "Bash",
+  "Glob",
+  "Grep",
 ];
 
 // ─── Template CRUD ───────────────────────────────────────────────────────────
@@ -93,7 +90,7 @@ export function deleteTemplate(name) {
 // ─── Spawn ───────────────────────────────────────────────────────────────────
 
 /**
- * Spawn a sub-agent worker to complete a task.
+ * Spawn a sub-agent to complete a task using the Claude Agent SDK.
  *
  * @param {Object} opts
  * @param {string} opts.task - The task description for the sub-agent.
@@ -101,109 +98,53 @@ export function deleteTemplate(name) {
  * @param {number} [opts.timeout] - Timeout in ms (default: 300000 = 5 minutes).
  * @returns {Promise<{ result: string, error: boolean }>}
  */
-export function spawnSubAgent({ task, template: templateName, timeout = 300_000 }) {
-  return new Promise(async (resolve) => {
-    // Load template if specified
-    let systemPrompt = "You are a helpful sub-agent. Complete the task and return the result.";
-    let allowedTools = DEFAULT_ALLOWED_TOOLS;
-    let maxTurns = 10;
-    let model = "claude-haiku-4-5-20251001";
+export async function spawnSubAgent({ task, template: templateName, timeout = 300_000 }) {
+  let systemPrompt = "You are a helpful sub-agent. Complete the task and return the result.";
+  let allowedTools = [...DEFAULT_ALLOWED_TOOLS];
+  let maxTurns = 10;
 
-    if (templateName) {
-      const tmpl = getTemplate(templateName);
-      if (tmpl) {
-        systemPrompt = tmpl.system_prompt;
-        allowedTools = tmpl.allowed_tools;
-        maxTurns = tmpl.max_turns;
-      } else {
-        resolve({
-          result: `Template '${templateName}' not found.`,
-          error: true,
-        });
-        return;
+  if (templateName) {
+    const tmpl = getTemplate(templateName);
+    if (tmpl) {
+      systemPrompt = tmpl.system_prompt || systemPrompt;
+      allowedTools = tmpl.allowed_tools || allowedTools;
+      if (tmpl.max_turns) maxTurns = tmpl.max_turns;
+    } else {
+      return { result: `Template '${templateName}' not found.`, error: true };
+    }
+  }
+
+  const runAgent = async () => {
+    let resultText = "";
+    for await (const message of query({
+      prompt: task,
+      options: {
+        model: "haiku",
+        systemPrompt,
+        tools: allowedTools,
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        maxTurns,
+        cwd: homedir(),
+        persistSession: false,
+      },
+    })) {
+      if (message.type === "result") {
+        resultText = message.result || "";
       }
     }
+    return resultText;
+  };
 
-    // Filter tool definitions to only the allowed ones
-    const filteredTools = tools.filter((t) => allowedTools.includes(t.name));
-
-    // Fork the worker
-    const child = fork(WORKER_PATH, [], {
-      stdio: ["ignore", "pipe", "pipe", "ipc"],
-    });
-
-    let settled = false;
-
-    // Timeout guard
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        child.kill("SIGKILL");
-        resolve({
-          result: `Sub-agent timed out after ${timeout}ms.`,
-          error: true,
-        });
-      }
-    }, timeout);
-
-    // Capture stderr for debugging
-    let stderrOutput = "";
-    child.stderr.on("data", (chunk) => {
-      stderrOutput += chunk.toString();
-    });
-
-    // Listen for result
-    child.on("message", (msg) => {
-      if (settled) return;
-
-      if (msg.type === "result") {
-        settled = true;
-        clearTimeout(timer);
-        child.kill();
-        resolve({ result: msg.result, error: false });
-      } else if (msg.type === "error") {
-        settled = true;
-        clearTimeout(timer);
-        child.kill();
-        resolve({ result: msg.error, error: true });
-      }
-    });
-
-    // Handle unexpected exit
-    child.on("exit", (code) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        const detail = stderrOutput
-          ? `\nWorker stderr: ${stderrOutput.slice(0, 500)}`
-          : "";
-        resolve({
-          result: `Sub-agent worker exited unexpectedly (code ${code}).${detail}`,
-          error: true,
-        });
-      }
-    });
-
-    // Handle fork errors
-    child.on("error", (err) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve({
-          result: `Sub-agent fork error: ${err.message}`,
-          error: true,
-        });
-      }
-    });
-
-    // Send the task to the worker
-    child.send({
-      type: "start",
-      task,
-      systemPrompt,
-      tools: filteredTools,
-      model,
-      maxTurns,
-    });
-  });
+  try {
+    const result = await Promise.race([
+      runAgent(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Sub-agent timed out after ${timeout}ms`)), timeout)
+      ),
+    ]);
+    return { result, error: false };
+  } catch (err) {
+    return { result: err.message || String(err), error: true };
+  }
 }

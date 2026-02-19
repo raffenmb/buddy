@@ -17,7 +17,7 @@ Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on
 
 ## Tech Stack
 
-- **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `yt-search`
+- **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `yt-search`
 - **Frontend:** React 18 with Vite, Tailwind CSS 4, Victory (charts)
 - **Database:** SQLite via `better-sqlite3` at `~/.buddy/buddy.db`
 - **State:** React Context + useReducer (command/reducer pattern)
@@ -99,10 +99,11 @@ Long command output (>200 lines) is summarized by Haiku before returning to Clau
 
 ### Sub-Agent Model
 
-The main agent is always the face of the conversation. Sub-agents are invisible workers:
+The main agent is always the face of the conversation. Sub-agents are invisible workers powered by the Claude Agent SDK:
 - Main agent delegates via `spawn_agent` tool
-- Worker runs as a forked child process (`server/subagent/worker.js`) with its own Claude conversation
-- Sub-agents get platform tools (shell, filesystem) but cannot send canvas commands or spawn their own sub-agents
+- `spawnSubAgent()` calls the Agent SDK's `query()` async generator in-process (no child process fork)
+- Sub-agents run with `bypassPermissions` mode and get coding tools: Read, Write, Edit, Bash, Glob, Grep
+- Default model is Haiku for speed/cost efficiency
 - Results returned to main agent (summarized by Haiku if large)
 - Reusable templates stored in SQLite `agent_templates` table
 
@@ -193,8 +194,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/shell/filesystem.js` — Host filesystem operations (readFile, writeFile, listDirectory), dev-mode write restrictions
 - `server/shell/processManager.js` — Long-lived background process lifecycle (start, stop, status, logs) at `~/.buddy/processes/`
 - `server/shell/summarizer.js` — Haiku-based output summarization for long command output, log file storage
-- `server/subagent/spawner.js` — Sub-agent template CRUD + `spawnSubAgent()` (forks worker, returns result)
-- `server/subagent/worker.js` — Forked child process with own Claude conversation, platform tool handlers, IPC communication
+- `server/subagent/spawner.js` — Sub-agent template CRUD + `spawnSubAgent()` (calls Agent SDK `query()`, returns result)
 
 ## Key Client Modules
 

@@ -501,7 +501,7 @@ const tools = [
   {
     name: "spawn_agent",
     description:
-      "Spawn a sub-agent to handle a task independently. The sub-agent works in the background with its own conversation and tools, then returns a result. Use for research, complex file operations, or any task you want to delegate.",
+      "Spawn a sub-agent to handle a task independently. Powered by the Claude Agent SDK with full coding tools (file read/write/edit, bash, glob search, grep search). Use for code refactoring, codebase analysis, research, or any task you want to delegate.",
     input_schema: {
       type: "object",
       properties: {
@@ -545,7 +545,7 @@ const tools = [
             type: "string",
           },
           description:
-            "List of tool names the sub-agent can use (defaults to shell/file tools).",
+            "List of Agent SDK tool names the sub-agent can use. Available: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch. Defaults to Read, Write, Edit, Bash, Glob, Grep.",
         },
         max_turns: {
           type: "integer",
