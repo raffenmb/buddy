@@ -11,13 +11,13 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { writeFileSync } from "fs";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
 import { resetSession } from "./session.js";
-import { ensureSandboxRunning } from "./sandbox/healthcheck.js";
-import { saveBufferToSandbox } from "./sandbox/fileTransfer.js";
+import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -64,6 +64,31 @@ function broadcast(data) {
     if (client.readyState === 1) {
       client.send(message);
     }
+  });
+}
+
+// ─── Confirmation Gate ───────────────────────────────────────────────────────
+
+const pendingConfirmations = new Map();
+let confirmIdCounter = 0;
+
+function requestConfirmation(command, reason) {
+  return new Promise((resolve) => {
+    const id = `confirm-${++confirmIdCounter}`;
+    pendingConfirmations.set(id, resolve);
+
+    broadcast({
+      type: "canvas_command",
+      command: "canvas_show_confirmation",
+      params: { id, title: "Confirm Action", command, reason },
+    });
+
+    setTimeout(() => {
+      if (pendingConfirmations.has(id)) {
+        pendingConfirmations.delete(id);
+        resolve(false);
+      }
+    }, 60000);
   });
 }
 
@@ -279,18 +304,8 @@ app.post("/api/prompt", (req, res) => {
         }
       }
 
-      // Callback for send_file tool — delivers files to client via WebSocket
-      const sendFile = (fileData) => {
-        broadcast({
-          type: "file_delivery",
-          filename: fileData.filename,
-          data: fileData.data,
-          message: fileData.message,
-        });
-      };
-
       // Run through Claude with tool-use loop
-      const result = await processPrompt(prompt.trim(), agentId, { sendFile, sandboxAvailable });
+      const result = await processPrompt(prompt.trim(), agentId, { requestConfirmation });
 
       // Split canvas commands and subtitle, broadcast in order
       splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
@@ -307,6 +322,9 @@ app.post("/api/prompt", (req, res) => {
   })();
 });
 
+// Serve files from ~/.buddy/shared/ for file delivery
+app.use("/files", express.static(DIRS.shared));
+
 // ─── Static file serving (production) ─────────────────────────────────────────
 
 if (process.env.NODE_ENV === "production") {
@@ -322,9 +340,6 @@ if (process.env.NODE_ENV === "production") {
 const server = createServer(app);
 
 const wss = new WebSocketServer({ server });
-
-// Track sandbox availability (set on startup)
-let sandboxAvailable = false;
 
 wss.on("connection", (ws, req) => {
   // WebSocket auth — check token query param
@@ -351,28 +366,27 @@ wss.on("connection", (ws, req) => {
     try {
       const msg = JSON.parse(data.toString());
 
-      if (msg.type === "file_upload" && sandboxAvailable) {
-        const fileBuffer = Buffer.from(msg.data, "base64");
-        const containerPath = saveBufferToSandbox(fileBuffer, msg.filename);
+      if (msg.type === "confirm_response") {
+        const resolver = pendingConfirmations.get(msg.id);
+        if (resolver) {
+          pendingConfirmations.delete(msg.id);
+          resolver(msg.approved === true);
+        }
+        return;
+      }
 
-        // Inject file path into a prompt and process it
+      if (msg.type === "file_upload") {
+        const fileBuffer = Buffer.from(msg.data, "base64");
+        const filePath = join(DIRS.shared, msg.filename);
+        writeFileSync(filePath, fileBuffer);
+
         const userMessage = msg.text
-          ? `${msg.text}\n\n[File uploaded to: ${containerPath}]`
-          : `[File uploaded to: ${containerPath}] (filename: ${msg.filename})`;
+          ? `${msg.text}\n\n[File uploaded to: ${filePath}]`
+          : `[File uploaded to: ${filePath}] (filename: ${msg.filename})`;
 
         broadcast({ type: "processing", status: true });
-
-        const sendFile = (fileData) => {
-          broadcast({
-            type: "file_delivery",
-            filename: fileData.filename,
-            data: fileData.data,
-            message: fileData.message,
-          });
-        };
-
         try {
-          const result = await processPrompt(userMessage, currentAgentId, { sendFile, sandboxAvailable });
+          const result = await processPrompt(userMessage, currentAgentId, { requestConfirmation });
           splitAndBroadcast(result.allToolCalls, result.finalTextContent, broadcast);
         } catch (err) {
           console.error("Error processing file upload:", err);
@@ -396,15 +410,9 @@ wss.on("connection", (ws, req) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, async () => {
+server.listen(PORT, () => {
   console.log(`Buddy server running on http://localhost:${PORT}`);
   console.log(`WebSocket server ready on ws://localhost:${PORT}`);
-
-  // Start sandbox container (non-blocking — server works without it)
-  sandboxAvailable = await ensureSandboxRunning();
-  if (sandboxAvailable) {
-    console.log("Sandbox ready — shell_exec, read_file, write_file tools available");
-  } else {
-    console.log("Sandbox unavailable — sandbox tools will be disabled");
-  }
+  console.log(`Environment: ${process.env.BUDDY_ENV || "development"}`);
+  console.log(`Data directory: ${DIRS.root}`);
 });
