@@ -536,6 +536,64 @@ const tools = [
       required: ["id"],
     },
   },
+  {
+    name: "spawn_agent",
+    description:
+      "Spawn a sub-agent to handle a task independently. The sub-agent works in the background with its own conversation and tools, then returns a result. Use for research, complex file operations, or any task you want to delegate.",
+    input_schema: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description:
+            "Clear description of what the sub-agent should accomplish.",
+        },
+        template: {
+          type: "string",
+          description:
+            "Name of a saved agent template to use for the sub-agent.",
+        },
+        timeout: {
+          type: "number",
+          description:
+            "Timeout in milliseconds (default: 300000 = 5 minutes).",
+        },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "create_agent_template",
+    description:
+      "Create or update a reusable sub-agent template. Templates define the system prompt, allowed tools, and max turns for sub-agents.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Unique name for this template.",
+        },
+        system_prompt: {
+          type: "string",
+          description: "System prompt for sub-agents using this template.",
+        },
+        allowed_tools: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description:
+            "List of tool names the sub-agent can use (defaults to shell/file tools).",
+        },
+        max_turns: {
+          type: "integer",
+          description:
+            "Maximum number of tool-use turns for the sub-agent (default: 10).",
+        },
+      },
+      required: ["name", "system_prompt"],
+    },
+  },
 ];
 
 export const PLATFORM_TOOL_NAMES = [
@@ -547,6 +605,8 @@ export const PLATFORM_TOOL_NAMES = [
   "process_stop",
   "process_status",
   "process_logs",
+  "spawn_agent",
+  "create_agent_template",
 ];
 
 export default tools;

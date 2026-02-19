@@ -16,6 +16,7 @@ import { executeShell } from "./shell/executor.js";
 import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
 import { startProcess, stopProcess, getProcessStatus, getProcessLogs } from "./shell/processManager.js";
 import { maybeSummarize } from "./shell/summarizer.js";
+import { spawnSubAgent, createTemplate } from "./subagent/spawner.js";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -291,6 +292,28 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
             tool_use_id: toolUse.id,
             content: result.error ? JSON.stringify(result) : JSON.stringify({ log: summarized, totalLines: result.totalLines }),
             ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "spawn_agent") {
+          const result = await spawnSubAgent({
+            task: toolUse.input.task,
+            template: toolUse.input.template,
+            timeout: toolUse.input.timeout,
+          });
+          const { content: summarized } = await maybeSummarize(result.result, "sub-agent result");
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: summarized,
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "create_agent_template") {
+          const result = createTemplate(toolUse.input);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
           };
         }
         return {
