@@ -1,9 +1,12 @@
 import { useBuddy } from "../../context/BuddyState";
+import { useAuth } from "../../context/AuthContext";
 import AgentList from "./AgentList";
 import AgentEditor from "./AgentEditor";
+import UserList from "./UserList";
 
 export default function AdminDashboard() {
   const { state, dispatch } = useBuddy();
+  const { user } = useAuth();
   const { adminScreen, adminSelectedAgentId } = state;
 
   function goBack() {
@@ -56,7 +59,10 @@ export default function AdminDashboard() {
             onDeleted={handleDeleted}
           />
         ) : (
-          <AgentList />
+          <div className="p-4 max-w-2xl mx-auto flex flex-col gap-6">
+            <AgentList />
+            {user?.isAdmin && <UserList />}
+          </div>
         )}
       </div>
     </div>

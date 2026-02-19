@@ -125,6 +125,14 @@ export default function TopBar() {
                 }}
               >
                 {a.name}
+                {!a.user_id && (
+                  <span
+                    className="text-xs ml-1"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
+                    (shared)
+                  </span>
+                )}
               </button>
             ))}
             {agents.length === 0 && (

@@ -50,7 +50,7 @@ export default function AgentList() {
   }
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className="flex flex-col gap-3">
       {/* Agent cards */}
       <div className="flex flex-col gap-3">
         {agents.map((a) => {
@@ -74,11 +74,25 @@ export default function AgentList() {
                 className="flex-shrink-0 rounded-xl"
               />
               <div className="min-w-0 flex-1">
-                <div
-                  className="text-sm font-semibold truncate"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {a.name}
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-semibold truncate"
+                    style={{ color: "var(--color-text-primary)" }}
+                  >
+                    {a.name}
+                  </span>
+                  {!a.user_id && (
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+                      style={{
+                        backgroundColor: "var(--color-bg-raised)",
+                        color: "var(--color-text-muted)",
+                        border: "1px solid var(--color-border)",
+                      }}
+                    >
+                      Shared
+                    </span>
+                  )}
                 </div>
               </div>
               {/* Chevron right */}

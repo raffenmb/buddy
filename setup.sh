@@ -385,7 +385,7 @@ if [ ! -f server/.env ]; then
 ANTHROPIC_API_KEY=$API_KEY
 PORT=3001
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
-AUTH_TOKEN=
+BUDDY_ENV=development
 EOF
 
     ok "API key saved to server/.env"
