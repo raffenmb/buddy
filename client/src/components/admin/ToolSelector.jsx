@@ -39,6 +39,9 @@ export default function ToolSelector({ enabledTools, onChange }) {
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [editing, setEditing] = useState(null); // { folderName, content }
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -60,7 +63,7 @@ export default function ToolSelector({ enabledTools, onChange }) {
       ...t,
       type: t.sandbox ? "sandbox" : "built-in",
     })),
-    ...skills.map((s) => ({ name: s.folderName, label: s.name, type: "custom" })),
+    ...skills.map((s) => ({ name: s.folderName, label: s.name, description: s.description, type: "custom" })),
   ];
 
   // When enabledTools is null: standard built-in tools ON, sandbox tools OFF, custom skills OFF
@@ -119,6 +122,37 @@ export default function ToolSelector({ enabledTools, onChange }) {
       }
     } catch (err) {
       showAlert("Failed to delete skill: " + err.message);
+    }
+  }
+
+  // ─── Edit handling ───────────────────────────────────────────────────────────
+
+  async function handleEditSkill(folderName) {
+    setEditError("");
+    try {
+      const data = await apiFetch(`/api/skills/${folderName}`);
+      setEditing({ folderName, content: data.content });
+    } catch (err) {
+      showAlert("Failed to load skill: " + err.message);
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    setEditSaving(true);
+    setEditError("");
+
+    try {
+      await apiFetch(`/api/skills/${editing.folderName}`, {
+        method: "PUT",
+        body: { content: editing.content },
+      });
+      await loadSkills();
+      setEditing(null);
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -297,46 +331,66 @@ export default function ToolSelector({ enabledTools, onChange }) {
             key={item.name}
             className="flex items-center justify-between py-2 px-1"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="text-sm"
-                style={{ color: "var(--color-text-primary)" }}
-              >
-                {item.label}
-              </span>
-              <span
-                className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
-                style={{
-                  backgroundColor:
-                    item.type === "custom"
-                      ? "var(--color-accent)"
-                      : item.type === "sandbox"
-                        ? "#8B5CF6"
-                        : "var(--color-bg-raised)",
-                  color:
-                    item.type === "built-in"
-                      ? "var(--color-text-muted)"
-                      : "#FFFFFF",
-                  border:
-                    item.type === "built-in"
-                      ? "1px solid var(--color-border)"
-                      : "none",
-                }}
-              >
-                {item.type === "built-in" ? "Built-in" : item.type === "sandbox" ? "Sandbox" : "Custom"}
-              </span>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-sm"
+                  style={{ color: "var(--color-text-primary)" }}
+                >
+                  {item.label}
+                </span>
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor:
+                      item.type === "custom"
+                        ? "var(--color-accent)"
+                        : item.type === "sandbox"
+                          ? "#8B5CF6"
+                          : "var(--color-bg-raised)",
+                    color:
+                      item.type === "built-in"
+                        ? "var(--color-text-muted)"
+                        : "#FFFFFF",
+                    border:
+                      item.type === "built-in"
+                        ? "1px solid var(--color-border)"
+                        : "none",
+                  }}
+                >
+                  {item.type === "built-in" ? "Built-in" : item.type === "sandbox" ? "Sandbox" : "Custom"}
+                </span>
+              </div>
+              {item.description && (
+                <span
+                  className="text-xs mt-0.5"
+                  style={{ color: "var(--color-text-muted)" }}
+                >
+                  {item.description}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               {item.type === "custom" && (
-                <button
-                  onClick={() => handleDeleteSkill(item.name)}
-                  className="text-xs px-2 py-1 rounded-lg transition-colors"
-                  style={{ color: "#EF4444" }}
-                  title="Delete skill from server"
-                >
-                  Delete
-                </button>
+                <>
+                  <button
+                    onClick={() => handleEditSkill(item.name)}
+                    className="text-xs px-2 py-1 rounded-lg transition-colors"
+                    style={{ color: "var(--color-accent)" }}
+                    title="Edit skill SKILL.md"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSkill(item.name)}
+                    className="text-xs px-2 py-1 rounded-lg transition-colors"
+                    style={{ color: "#EF4444" }}
+                    title="Delete skill from server"
+                  >
+                    Delete
+                  </button>
+                </>
               )}
               <ToggleSwitch
                 checked={isChecked(item.name, item.type)}
@@ -355,6 +409,70 @@ export default function ToolSelector({ enabledTools, onChange }) {
           </div>
         )}
       </div>
+
+      {/* Skill editor */}
+      {editing && (
+        <div
+          className="mt-3 rounded-xl p-4 flex flex-col gap-3"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            border: "1px solid var(--color-border)",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <span
+              className="text-sm font-medium"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              Editing: {editing.folderName}/SKILL.md
+            </span>
+            <button
+              onClick={() => { setEditing(null); setEditError(""); }}
+              className="text-xs px-2 py-1 rounded-lg"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Cancel
+            </button>
+          </div>
+          <textarea
+            value={editing.content}
+            onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+            className="w-full rounded-lg p-3 text-sm"
+            style={{
+              backgroundColor: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+              border: "1px solid var(--color-border)",
+              fontFamily: "monospace",
+              minHeight: "200px",
+              resize: "vertical",
+            }}
+          />
+          {editError && (
+            <div
+              className="text-sm p-3 rounded-xl"
+              style={{
+                backgroundColor: "#FEF2F2",
+                color: "#DC2626",
+                border: "1px solid #FECACA",
+              }}
+            >
+              {editError}
+            </div>
+          )}
+          <button
+            onClick={handleSaveEdit}
+            disabled={editSaving}
+            className="self-end text-sm px-4 py-1.5 rounded-lg transition-colors"
+            style={{
+              backgroundColor: "var(--color-accent)",
+              color: "#FFFFFF",
+              opacity: editSaving ? 0.6 : 1,
+            }}
+          >
+            {editSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      )}
 
       {/* Upload drop zone */}
       <div

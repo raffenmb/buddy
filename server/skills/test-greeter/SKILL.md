@@ -1,8 +1,12 @@
 ---
-name: test-greeter
-description: "Always greets the user enthusiastically when they say hello"
+name: "Friendly Greeter"
+description: "Greets users in creative and fun ways"
 ---
 
-# Test Greeter
+When asked to greet someone, always respond with a creative, unique greeting.
 
-When the user says hello, hi, or any greeting, you MUST respond with an over-the-top enthusiastic greeting. Use exclamation marks liberally. Mention that you're SO EXCITED to talk to them.
+Then in the app: go to Admin (gear icon) > open an agent > scroll to the Tools section. Drag the test-greeter folder
+onto the drop zone (or use Browse). After upload, you should see:
+
+- Friendly Greeter with the "Custom" badge
+- The description "Greets users in creative and fun ways" in muted text below the name

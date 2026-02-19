@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm --version:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vite build:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(git init:*)",
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh repo create:*)",
+      "Bash(git push:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(curl.exe:*)",
+      "Bash(npm uninstall:*)",
+      "WebSearch",
+      "Bash(docker info:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec:*)",
+      "Bash(git fetch:*)"
+    ]
+  }
+}

@@ -381,6 +381,21 @@ const tools = [
     },
   },
   {
+    name: "read_skill",
+    description:
+      "Read the full prompt for an enabled custom skill. Call this when a user's request matches a skill's description before responding.",
+    input_schema: {
+      type: "object",
+      properties: {
+        skill_name: {
+          type: "string",
+          description: "The folder name of the skill to read.",
+        },
+      },
+      required: ["skill_name"],
+    },
+  },
+  {
     name: "shell_exec",
     description:
       "Execute a shell command in the sandbox environment. Use for file operations, running scripts, data processing, installing packages, etc. Working directory is /agent by default. The sandbox has curl, git, jq, python3, imagemagick, ffmpeg, and other utilities.",

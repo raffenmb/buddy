@@ -14,7 +14,7 @@ import { dirname, join } from "path";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile } from "./agents.js";
-import { listSkills, validateAndAddSkill, deleteSkill } from "./skills.js";
+import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
 import { resetSession } from "./session.js";
 import { ensureSandboxRunning } from "./sandbox/healthcheck.js";
 import { saveBufferToSandbox } from "./sandbox/fileTransfer.js";
@@ -192,6 +192,29 @@ app.post("/api/skills", (req, res) => {
   }
 
   res.status(201).json({ status: "created", folderName: folderName.trim() });
+});
+
+app.get("/api/skills/:folderName", (req, res) => {
+  const content = getSkillContent(req.params.folderName);
+  if (content === null) {
+    return res.status(404).json({ error: "Skill not found" });
+  }
+  res.json({ folderName: req.params.folderName, content });
+});
+
+app.put("/api/skills/:folderName", (req, res) => {
+  const { content } = req.body;
+
+  if (!content || typeof content !== "string") {
+    return res.status(400).json({ error: "content is required" });
+  }
+
+  const result = updateSkill(req.params.folderName, content);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({ status: "updated", folderName: req.params.folderName });
 });
 
 app.delete("/api/skills/:folderName", (req, res) => {

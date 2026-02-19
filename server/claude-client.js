@@ -11,7 +11,7 @@ import { dirname, join } from "path";
 import tools from "./tools.js";
 import { listSkills, getSkillPrompt } from "./skills.js";
 import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
-import { getAgent, getMemories, setMemory, getIdentity, getUserInfo } from "./agents.js";
+import { getAgent, getMemories, setMemory, getIdentity, getUserInfo, updateAgent } from "./agents.js";
 import { handleSandboxTool, SANDBOX_TOOL_NAMES } from "./sandbox/toolHandler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -68,28 +68,41 @@ function buildSystemPrompt(agent, memories) {
     .replace("{{memories}}", memoriesSection)
     .trim();
 
-  // Append enabled custom skill prompts
-  // TODO: Refactor to on-demand loading once terminal execution is built.
-  // Currently injects full skill prompts (token-inefficient). Target: only inject
-  // name+description metadata here, let the agent read full SKILL.md via bash tool
-  // when relevant. See docs/plans/2026-02-17-custom-skills-design.md.
+  // Inject metadata-only skill listing — full prompts loaded on-demand via read_skill tool
   const enabledTools = parseEnabledTools(agent.enabled_tools);
   if (enabledTools) {
     const installedSkills = listSkills();
     const builtInNames = tools.map((t) => t.name);
+    const staleRefs = [];
+    const enabledSkills = [];
 
     for (const toolName of enabledTools) {
       // Skip built-in tools — they're handled via the tools array, not system prompt
       if (builtInNames.includes(toolName)) continue;
+      if (SANDBOX_TOOL_NAMES.includes(toolName)) continue;
 
       // Check if this is an installed skill
       const skill = installedSkills.find((s) => s.folderName === toolName);
-      if (!skill) continue; // stale reference, skip silently
-
-      const prompt = getSkillPrompt(toolName);
-      if (prompt) {
-        basePrompt += `\n\n## Skill: ${skill.name}\n${prompt}`;
+      if (!skill) {
+        staleRefs.push(toolName);
+        continue;
       }
+
+      enabledSkills.push(skill);
+    }
+
+    if (enabledSkills.length > 0) {
+      basePrompt += "\n\n## Custom Skills\nYou have custom skills available. When a user's request matches a skill's description, call the `read_skill` tool with the skill's folder name to load its full instructions before responding.\n\nAvailable skills:";
+      for (const skill of enabledSkills) {
+        basePrompt += `\n- **${skill.name}** (folder: \`${skill.folderName}\`): ${skill.description}`;
+      }
+    }
+
+    // Clean up stale skill references from agent's enabled_tools
+    if (staleRefs.length > 0) {
+      console.warn(`Agent '${agent.id}': removing stale skill references: ${staleRefs.join(", ")}`);
+      const cleaned = enabledTools.filter((n) => !staleRefs.includes(n));
+      updateAgent(agent.id, { enabled_tools: cleaned.length > 0 ? cleaned : null });
     }
   }
 
@@ -110,6 +123,23 @@ function parseEnabledTools(enabledToolsRaw) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Check whether an agent has any custom skills enabled.
+ */
+function agentHasCustomSkills(agent) {
+  const enabledTools = parseEnabledTools(agent.enabled_tools);
+  if (!enabledTools) return false;
+
+  const installedSkills = listSkills();
+  const builtInNames = tools.map((t) => t.name);
+  return enabledTools.some(
+    (name) =>
+      !builtInNames.includes(name) &&
+      !SANDBOX_TOOL_NAMES.includes(name) &&
+      installedSkills.some((s) => s.folderName === name)
+  );
 }
 
 /**
@@ -136,17 +166,18 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
   //    - Canvas tools: always included
   //    - Standard non-canvas tools (search_youtube, remember_fact): included when enabled_tools is null
   //    - Sandbox tools (shell_exec, etc.): opt-in only — require explicit listing in enabled_tools
-  //    - Custom skills: NOT API tools — injected into system prompt
+  //    - read_skill: included only when agent has custom skills enabled
+  const hasSkills = agentHasCustomSkills(agent);
   let agentTools = tools;
   const enabledTools = parseEnabledTools(agent.enabled_tools);
   if (enabledTools) {
     agentTools = tools.filter(
-      (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name)
+      (t) => t.name.startsWith("canvas_") || enabledTools.includes(t.name) || (t.name === "read_skill" && hasSkills)
     );
   } else {
-    // null = all standard tools ON, sandbox tools OFF
+    // null = all standard tools ON, sandbox tools OFF, read_skill OFF (no skills when null)
     agentTools = tools.filter(
-      (t) => !SANDBOX_TOOL_NAMES.includes(t.name)
+      (t) => !SANDBOX_TOOL_NAMES.includes(t.name) && t.name !== "read_skill"
     );
   }
 
@@ -203,6 +234,22 @@ export async function processPrompt(userText, agentId = "buddy", callbacks = {})
             type: "tool_result",
             tool_use_id: toolUse.id,
             content: JSON.stringify({ status: "remembered" }),
+          };
+        }
+        if (toolUse.name === "read_skill") {
+          const prompt = getSkillPrompt(toolUse.input.skill_name);
+          if (prompt) {
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: prompt,
+            };
+          }
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify({ error: `Skill '${toolUse.input.skill_name}' not found.` }),
+            is_error: true,
           };
         }
         if (SANDBOX_TOOL_NAMES.includes(toolUse.name)) {
