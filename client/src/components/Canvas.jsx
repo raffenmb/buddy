@@ -7,9 +7,12 @@ import {
   DataTable,
   TextBlock,
   VideoPlayer,
-  ImageDisplay,
   Notification as NotificationToast,
   ActionConfirm,
+  ProgressBar,
+  Timer,
+  Checklist,
+  FormInput,
 } from "./canvas-elements";
 
 const ELEMENT_COMPONENTS = {
@@ -18,8 +21,11 @@ const ELEMENT_COMPONENTS = {
   table: DataTable,
   text: TextBlock,
   media: VideoPlayer,
-  image: ImageDisplay,
   confirmation: ActionConfirm,
+  progress: ProgressBar,
+  timer: Timer,
+  checklist: Checklist,
+  form: FormInput,
 };
 
 function CanvasElement({ element, index }) {
@@ -91,7 +97,7 @@ function ElementsLayout({ elements, layout }) {
       return (
         <div className="flex flex-row flex-wrap gap-4 p-6 pb-32 max-w-6xl mx-auto">
           {elements.map((el, i) => (
-            <div key={el.id || i} style={{ flexBasis: "48%", flexGrow: 1, minWidth: 0 }}>
+            <div key={el.id || i} style={{ flexBasis: "48%", flexGrow: 1, minWidth: 280 }}>
               <CanvasElement element={el} index={i} />
             </div>
           ))}
@@ -102,7 +108,7 @@ function ElementsLayout({ elements, layout }) {
       return (
         <div className="flex flex-row flex-wrap gap-4 p-6 pb-32 max-w-6xl mx-auto">
           {elements.map((el, i) => (
-            <div key={el.id || i} style={{ flexBasis: "31%", flexGrow: 1, minWidth: 0 }}>
+            <div key={el.id || i} style={{ flexBasis: "31%", flexGrow: 1, minWidth: 250 }}>
               <CanvasElement element={el} index={i} />
             </div>
           ))}
@@ -118,7 +124,7 @@ function ElementsLayout({ elements, layout }) {
               style={{
                 flexBasis: i === 0 ? "100%" : "48%",
                 flexGrow: 1,
-                minWidth: 0,
+                minWidth: i === 0 ? 0 : 280,
               }}
             >
               <CanvasElement element={el} index={i} />
@@ -175,11 +181,11 @@ export default function Canvas() {
         </div>
       ) : null}
 
-      {/* Confirmation cards render regardless of canvas mode */}
-      {canvas.elements.some((el) => el.type === "confirmation") && canvas.mode !== "content" && canvas.mode !== "media" && (
+      {/* Confirmation cards and forms render regardless of canvas mode */}
+      {canvas.elements.some((el) => el.type === "confirmation" || el.type === "form") && canvas.mode !== "content" && canvas.mode !== "media" && (
         <div className="absolute inset-0 z-10 overflow-y-auto">
           <ElementsLayout
-            elements={canvas.elements.filter((el) => el.type === "confirmation")}
+            elements={canvas.elements.filter((el) => el.type === "confirmation" || el.type === "form")}
             layout="single"
           />
         </div>

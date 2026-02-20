@@ -6,7 +6,7 @@ const initialState = {
   canvas: {
     mode: "ambient",
     layout: "single",
-    theme: { mode: "dark", accent_color: "#3B82F6", background: "gradient" },
+    theme: { mode: "dark", accent_color: "#3B82F6" },
     elements: [],
     notification: null
   },
@@ -84,7 +84,7 @@ function buddyReducer(state, action) {
     case "CANVAS_ADD_CARD":
       return addElement(state, "card", action.payload);
 
-    case "CANVAS_UPDATE_CARD":
+    case "CANVAS_UPDATE_ELEMENT":
       return {
         ...state,
         canvas: {
@@ -136,6 +136,18 @@ function buddyReducer(state, action) {
 
     case "CANVAS_SHOW_CONFIRMATION":
       return addElement(state, "confirmation", action.payload);
+
+    case "CANVAS_SHOW_PROGRESS":
+      return addElement(state, "progress", action.payload);
+
+    case "CANVAS_SHOW_TIMER":
+      return addElement(state, "timer", action.payload);
+
+    case "CANVAS_SHOW_CHECKLIST":
+      return addElement(state, "checklist", action.payload);
+
+    case "CANVAS_SHOW_FORM":
+      return addElement(state, "form", action.payload);
 
     case "CANVAS_REHYDRATE":
       return {

@@ -81,29 +81,50 @@ const tools = [
     },
   },
   {
-    name: "canvas_update_card",
+    name: "canvas_update_element",
     description:
-      "Update an existing card element on the canvas. Only the fields you provide will be changed; omitted fields keep their current values.",
+      "Update any existing element on the canvas by its ID. Only the fields you provide will be changed; omitted fields keep their current values. Works for cards, progress bars, timers, checklists, and any other element type.",
     input_schema: {
       type: "object",
       properties: {
         id: {
           type: "string",
           description:
-            "The ID of the card to update. Must match an existing card.",
+            "The ID of the element to update. Must match an existing element.",
         },
         title: {
           type: "string",
-          description: "New title for the card.",
+          description: "New title for the element.",
         },
         body: {
           type: "string",
-          description: "New body content for the card (markdown).",
+          description: "New body content (markdown). Used by cards and text blocks.",
         },
         color: {
           type: "string",
           enum: ["default", "blue", "green", "red", "yellow", "purple", "gray"],
-          description: "New accent color for the card.",
+          description: "New accent color.",
+        },
+        content: {
+          type: "string",
+          description: "New text content. Used by text blocks.",
+        },
+        label: {
+          type: "string",
+          description: "New label. Used by progress bars and timers.",
+        },
+        percent: {
+          type: "number",
+          description: "New percentage (0-100). Used by progress bars.",
+        },
+        status: {
+          type: "string",
+          description: "New status. Used by progress bars (active/complete/error).",
+        },
+        items: {
+          type: "array",
+          items: { type: "object" },
+          description: "New items array. Used by checklists.",
         },
       },
       required: ["id"],
@@ -293,6 +314,174 @@ const tools = [
     },
   },
   {
+    name: "canvas_show_progress",
+    description:
+      "Show a progress bar on the canvas. Use for tracking task completion, downloads, or any process with a known percentage. Update it later with canvas_update_element.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Unique, descriptive identifier for this progress bar.",
+        },
+        label: {
+          type: "string",
+          description: "Label displayed above the progress bar.",
+        },
+        percent: {
+          type: "number",
+          description: "Completion percentage (0-100).",
+        },
+        status: {
+          type: "string",
+          enum: ["active", "complete", "error"],
+          description: "Progress bar status. Affects color: green for complete, red for error.",
+        },
+        color: {
+          type: "string",
+          description: "Custom hex color for the bar (overridden by status color).",
+        },
+      },
+      required: ["id", "label", "percent"],
+    },
+  },
+  {
+    name: "canvas_show_timer",
+    description:
+      "Show a countdown timer, target-time countdown, or stopwatch on the canvas. Counts down to zero (or up for stopwatch) and shows a completion message. Timer survives page refresh via server-injected created_at timestamp.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Unique, descriptive identifier for this timer.",
+        },
+        label: {
+          type: "string",
+          description: "Label displayed above the timer.",
+        },
+        duration_seconds: {
+          type: "integer",
+          description: "Duration in seconds for countdown or stopwatch limit.",
+        },
+        target_time: {
+          type: "string",
+          description: "ISO 8601 datetime to count down to (e.g. '2026-02-20T18:00:00'). Alternative to duration_seconds.",
+        },
+        style: {
+          type: "string",
+          enum: ["countdown", "stopwatch"],
+          description: "Timer style: countdown (default) counts down, stopwatch counts up.",
+        },
+        auto_start: {
+          type: "boolean",
+          description: "Whether to start the timer immediately (default: true).",
+        },
+      },
+      required: ["id", "label"],
+    },
+  },
+  {
+    name: "canvas_show_checklist",
+    description:
+      "Show an interactive checklist on the canvas. Users can toggle items on/off. State persists across page refreshes. Use for to-do lists, shopping lists, or step-by-step task tracking.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Unique, descriptive identifier for this checklist.",
+        },
+        title: {
+          type: "string",
+          description: "Title displayed above the checklist.",
+        },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label: {
+                type: "string",
+                description: "The checklist item text.",
+              },
+              checked: {
+                type: "boolean",
+                description: "Whether this item is checked (default: false).",
+              },
+            },
+            required: ["label"],
+          },
+          description: "Array of checklist items.",
+        },
+      },
+      required: ["id", "title", "items"],
+    },
+  },
+  {
+    name: "canvas_show_form",
+    description:
+      "Show an interactive form on the canvas and wait for the user to fill it out and submit. This tool BLOCKS until the user submits (5 minute timeout). Use when you need structured input from the user (preferences, settings, multi-field data). The submitted data is returned as the tool result.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Unique, descriptive identifier for this form.",
+        },
+        title: {
+          type: "string",
+          description: "Form title.",
+        },
+        description: {
+          type: "string",
+          description: "Optional description or instructions shown below the title.",
+        },
+        fields: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Field key name (used in the returned data object).",
+              },
+              label: {
+                type: "string",
+                description: "Display label for this field.",
+              },
+              type: {
+                type: "string",
+                enum: ["text", "textarea", "number", "select", "toggle"],
+                description: "Field input type.",
+              },
+              options: {
+                type: "array",
+                items: { type: "string" },
+                description: "Options for select fields.",
+              },
+              required: {
+                type: "boolean",
+                description: "Whether this field must be filled before submitting.",
+              },
+              placeholder: {
+                type: "string",
+                description: "Placeholder text for text/textarea/number fields.",
+              },
+            },
+            required: ["name", "label", "type"],
+          },
+          description: "Array of form field definitions.",
+        },
+        submit_label: {
+          type: "string",
+          description: "Custom text for the submit button (default: 'Submit').",
+        },
+      },
+      required: ["id", "title", "fields"],
+    },
+  },
+  {
     name: "canvas_show_notification",
     description:
       "Show a temporary notification toast on screen. Use for brief status messages, confirmations, or alerts.",
@@ -332,11 +521,6 @@ const tools = [
         accent_color: {
           type: "string",
           description: "Hex color string for the accent color (e.g. '#4F46E5').",
-        },
-        background: {
-          type: "string",
-          enum: ["solid", "gradient", "particles", "waves"],
-          description: "Background visual style.",
         },
       },
       required: ["mode"],

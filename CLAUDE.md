@@ -77,7 +77,7 @@ Every AI response produces:
 ### Data Flow
 
 1. User types -> `POST /api/prompt` -> server appends to session history
-2. Server calls Claude API with full history + tool definitions (10 canvas + 13 platform, always on) + skill metadata in system prompt
+2. Server calls Claude API with full history + tool definitions (14 canvas + 13 platform, always on) + skill metadata in system prompt
 3. Tool use loop runs until `stop_reason === "end_turn"`. Platform tools execute on the host. Canvas tools return `{ status: "rendered" }`.
 4. Response Splitter separates tool calls (canvas) from text (subtitle)
 5. Canvas commands broadcast via WebSocket **first**, then subtitle — so visuals appear before Buddy "speaks"
@@ -95,6 +95,10 @@ Destructive commands (rm -rf, disk operations, service management, etc.) trigger
 6. Card updates to show outcome (stays visible as audit record)
 
 Timeout: 60 seconds, auto-denied. Guard patterns are editable by the agent (but editing guards itself triggers confirmation).
+
+### Form Gate
+
+`canvas_show_form` uses the same blocking pattern as the confirmation gate. The tool-use loop pauses while the form is displayed, and resumes when the user submits (or after a 5-minute timeout). The submitted data is returned as the tool result so the agent can act on it. Forms are ephemeral — not persisted to canvas state.
 
 ### Output Summarization
 
@@ -189,7 +193,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/config.js` — BUDDY_HOME (`~/.buddy`), ENV, DIRS, GUARDS_PATH. Creates all directories and default config on first import. Every module imports paths from here.
 - `server/index.js` — Express + WebSocket entry point, confirmation gate, static file route (`/files` -> `~/.buddy/shared/`)
 - `server/claude-client.js` — Claude API integration with tool use loop, platform tool handlers, output summarization
-- `server/tools.js` — Tool definitions (10 canvas + 13 platform). Exports `PLATFORM_TOOL_NAMES`.
+- `server/tools.js` — Tool definitions (14 canvas + 13 platform). Exports `PLATFORM_TOOL_NAMES`.
 - `server/response-splitter.js` — Separates subtitle text from canvas commands
 - `server/db.js` — SQLite setup at `~/.buddy/buddy.db`, schema migrations
 - `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`. Buddy defaults to `["search-youtube", "remember-fact"]` enabled skills. Shared agents use `is_shared` flag + `agent_users` junction table for many-to-many membership. Includes startup migration to rename old tool names and remove platform tools from enabled_tools.
@@ -214,7 +218,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `client/src/hooks/useTheme.jsx` — ThemeProvider + useTheme hook, dark mode toggle, persists to localStorage
 - `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
 - `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types (including `canvas_show_confirmation`)
-- `client/src/components/canvas-elements/` — 8 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification, **ActionConfirm** (interactive destructive command confirmation)
+- `client/src/components/canvas-elements/` — 11 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), Notification, **ActionConfirm** (interactive destructive command confirmation), ProgressBar, Timer, **Checklist** (interactive, syncs via WebSocket), **FormInput** (interactive, blocks tool loop like ActionConfirm)
 - `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList (personal + shared agent creation), AgentEditor (button picker model selector, leave/delete for shared agents), ToolSelector (toggle switches for installed skills only). All users see AgentList; only admins see UserList.
 
 ## Environment
@@ -243,7 +247,7 @@ BUDDY_ENV=development
 - **On-demand skill loading** — only name/description in system prompt. Agent reads full SKILL.md via `read_file` when relevant (Anthropic's recommended pattern).
 - **All user data lives in `~/.buddy/`** — decoupled from the codebase. Skills, agents, processes, logs, shared files, database, and config all live outside the repo.
 - **Sliding message window** — `getMessages()` returns only recent messages within a ~120K token budget. Old messages stay in SQLite but aren't sent to Claude. Query uses `LIMIT 200 ORDER BY id DESC` for O(1) performance regardless of table size.
-- **Server-side canvas state** — canvas elements are tracked in the `sessions.canvas_state` column. Injected into the system prompt so Claude always knows what's on screen. Canvas persists across page refreshes and survives beyond the message window. Confirmation elements are excluded (ephemeral, 60s timeout).
+- **Server-side canvas state** — canvas elements are tracked in the `sessions.canvas_state` column. Injected into the system prompt so Claude always knows what's on screen. Canvas persists across page refreshes and survives beyond the message window. Confirmation and form elements are excluded (ephemeral, timeout-based). Checklist toggle state syncs via silent WebSocket updates (no agent interruption).
 
 ## Cross-Platform Parity Rule
 

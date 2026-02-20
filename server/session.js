@@ -145,6 +145,15 @@ export function updateCanvasState(userId, agentId, elements) {
   saveAllCanvasStates(userId, states);
 }
 
+export function updateCanvasElement(userId, agentId, elementId, updates) {
+  const elements = getCanvasState(userId, agentId);
+  const idx = elements.findIndex((el) => el.id === elementId);
+  if (idx !== -1) {
+    elements[idx] = { ...elements[idx], ...updates };
+    updateCanvasState(userId, agentId, elements);
+  }
+}
+
 export function applyCanvasCommand(userId, agentId, commandName, params) {
   const elements = getCanvasState(userId, agentId);
 
@@ -171,10 +180,22 @@ export function applyCanvasCommand(userId, agentId, commandName, params) {
     case "canvas_play_media":
       elements.push({ type: "media", ...params });
       break;
+    case "canvas_show_progress":
+      elements.push({ type: "progress", ...params });
+      break;
+    case "canvas_show_timer":
+      elements.push({ type: "timer", ...params, created_at: new Date().toISOString() });
+      break;
+    case "canvas_show_checklist":
+      elements.push({ type: "checklist", ...params });
+      break;
+    case "canvas_show_form":
+      // Forms are ephemeral (blocking, 5min timeout) — don't persist
+      return;
     case "canvas_show_confirmation":
       // Confirmations are ephemeral (60s timeout) — don't persist
       return;
-    case "canvas_update_card": {
+    case "canvas_update_element": {
       const idx = elements.findIndex(el => el.id === params.id);
       if (idx !== -1) elements[idx] = { ...elements[idx], ...params };
       break;

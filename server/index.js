@@ -17,7 +17,7 @@ import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent, attachUserToSharedAgents } from "./agents.js";
 import db from "./db.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
-import { resetSession, getCanvasState } from "./session.js";
+import { resetSession, getCanvasState, updateCanvasElement } from "./session.js";
 import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
@@ -97,6 +97,29 @@ function requestConfirmationForClient(ws, command, reason) {
         resolve(false);
       }
     }, 60000);
+  });
+}
+
+// ─── Form Gate ───────────────────────────────────────────────────────────────
+
+const pendingForms = new Map();
+let formIdCounter = 0;
+
+function requestFormForClient(ws, params) {
+  return new Promise((resolve) => {
+    const id = params.id || `form-${++formIdCounter}`;
+    pendingForms.set(id, resolve);
+    sendTo(ws, {
+      type: "canvas_command",
+      command: "canvas_show_form",
+      params: { ...params, id },
+    });
+    setTimeout(() => {
+      if (pendingForms.has(id)) {
+        pendingForms.delete(id);
+        resolve({ error: "Form timed out — no response after 5 minutes." });
+      }
+    }, 300000);
   });
 }
 
@@ -492,6 +515,9 @@ app.post("/api/prompt", (req, res) => {
         requestConfirmation: clientWs
           ? (command, reason) => requestConfirmationForClient(clientWs, command, reason)
           : undefined,
+        requestForm: clientWs
+          ? (params) => requestFormForClient(clientWs, params)
+          : undefined,
       });
 
       // Split canvas commands and subtitle, broadcast in order
@@ -584,6 +610,24 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      if (msg.type === "form_response") {
+        const resolver = pendingForms.get(msg.id);
+        if (resolver) {
+          pendingForms.delete(msg.id);
+          resolver(msg.data);
+        }
+        return;
+      }
+
+      if (msg.type === "canvas_element_update") {
+        // Silent update — no agent interruption. Used by Checklist toggles.
+        if (conn.userId && msg.id && msg.updates) {
+          const agentId = conn.agentId || "buddy";
+          updateCanvasElement(conn.userId, agentId, msg.id, msg.updates);
+        }
+        return;
+      }
+
       if (msg.type === "file_upload") {
         const fileBuffer = Buffer.from(msg.data, "base64");
         const filePath = join(DIRS.shared, msg.filename);
@@ -598,6 +642,7 @@ wss.on("connection", (ws, req) => {
         try {
           const result = await processPrompt(userMessage, agentId, conn.userId, {
             requestConfirmation: (command, reason) => requestConfirmationForClient(ws, command, reason),
+            requestForm: (params) => requestFormForClient(ws, params),
           });
           splitAndBroadcast(result.allToolCalls, result.finalTextContent, (d) => sendTo(ws, d));
         } catch (err) {

@@ -16,8 +16,9 @@ export function splitAndBroadcast(allToolCalls, finalTextContent, broadcast) {
   console.log(`[splitter] ${allToolCalls.length} tool calls:`, allToolCalls.map(t => t.name));
 
   // 1. Send canvas commands first (visuals before speech)
+  // Skip canvas_show_form — it's already sent by the blocking form handler
   for (const toolCall of allToolCalls) {
-    if (toolCall.name.startsWith("canvas_")) {
+    if (toolCall.name.startsWith("canvas_") && toolCall.name !== "canvas_show_form") {
       broadcast({
         type: "canvas_command",
         command: toolCall.name,

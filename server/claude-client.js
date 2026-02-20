@@ -135,6 +135,7 @@ function parseEnabledTools(enabledToolsRaw) {
  * @param {string} userId - The authenticated user's ID (scopes session history).
  * @param {Object} [callbacks] - Optional callbacks.
  * @param {Function} [callbacks.requestConfirmation] - Async callback for destructive command approval.
+ * @param {Function} [callbacks.requestForm] - Async callback for form submission. Blocks until user submits.
  * @returns {Promise<{allToolCalls: Array, finalTextContent: string}>}
  */
 export async function processPrompt(userText, agentId = "buddy", userId, callbacks = {}) {
@@ -369,6 +370,26 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
               is_error: true,
             };
           }
+        }
+        // Form tool — blocks until user submits
+        if (toolUse.name === "canvas_show_form") {
+          if (callbacks.requestForm) {
+            const formData = await callbacks.requestForm(toolUse.input);
+            if (formData && formData.error) {
+              return {
+                type: "tool_result",
+                tool_use_id: toolUse.id,
+                content: JSON.stringify({ error: formData.error }),
+                is_error: true,
+              };
+            }
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ status: "submitted", data: formData }),
+            };
+          }
+          // No form callback available — fall through to rendered
         }
         // Canvas tool — track state server-side and return rendered
         if (toolUse.name.startsWith("canvas_")) {
