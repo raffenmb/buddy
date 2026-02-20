@@ -523,19 +523,26 @@ if ask_yn "Set up Tailscale for remote access?"; then
         fi
     fi
 
-    # If tailscale is now available, check connection
+    # If tailscale is now available, ensure daemon is running and connect
     if command -v tailscale &>/dev/null; then
-        TS_STATUS=$(tailscale status 2>&1 || true)
-        if echo "$TS_STATUS" | grep -qiE "stopped|not logged in|NeedsLogin"; then
+        # On Linux, ensure tailscaled service is running after fresh install
+        if [ "$OS" = "linux" ] && command -v systemctl &>/dev/null; then
+            sudo systemctl enable --now tailscaled >> "$LOG_FILE" 2>&1 || true
+        fi
+
+        # Check if already connected by trying to get an IP
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+        if [ -z "$TAILSCALE_IP" ]; then
             info "Tailscale is not connected. Running 'sudo tailscale up'..."
-            info "Follow the URL printed below to authenticate."
+            info "A URL will appear below — open it in your browser to log in."
             echo ""
             sudo tailscale up
             echo ""
+
+            # Check again after auth
+            TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
         fi
 
-        # Try to get IP
-        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
         if [ -n "$TAILSCALE_IP" ]; then
             ok "Tailscale connected! IP: ${BOLD}${TAILSCALE_IP}${RESET}"
         else
