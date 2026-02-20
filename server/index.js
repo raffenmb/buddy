@@ -79,6 +79,7 @@ let confirmIdCounter = 0;
 function requestConfirmationForClient(ws, command, reason) {
   return new Promise((resolve) => {
     const id = `confirm-${++confirmIdCounter}`;
+    console.log(`[confirm] Sending confirmation request ${id} (ws.readyState=${ws.readyState})`);
     pendingConfirmations.set(id, resolve);
     sendTo(ws, {
       type: "canvas_command",
@@ -87,6 +88,7 @@ function requestConfirmationForClient(ws, command, reason) {
     });
     setTimeout(() => {
       if (pendingConfirmations.has(id)) {
+        console.log(`[confirm] Timeout — auto-denying ${id}`);
         pendingConfirmations.delete(id);
         resolve(false);
       }
@@ -551,10 +553,13 @@ wss.on("connection", (ws, req) => {
       const conn = wsConnections.get(ws);
 
       if (msg.type === "confirm_response") {
+        console.log(`[confirm] Received confirm_response: id=${msg.id}, approved=${msg.approved}`);
         const resolver = pendingConfirmations.get(msg.id);
         if (resolver) {
           pendingConfirmations.delete(msg.id);
           resolver(msg.approved === true);
+        } else {
+          console.log(`[confirm] No pending confirmation found for ${msg.id}`);
         }
         return;
       }

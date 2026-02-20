@@ -142,6 +142,51 @@ Manual testing checklist for verifying Buddy features. Run through these steps a
 
 ---
 
+## Scheduler
+
+### Schedule Creation
+
+- [ ] Ask Buddy: "Remind me in 2 minutes to stretch"
+- [ ] Verify Buddy calls `create_schedule` with a one-shot schedule
+- [ ] Verify Buddy confirms the reminder name and next run time
+
+### Schedule Firing
+
+- [ ] Wait ~2 minutes for the one-shot schedule to fire
+- [ ] Verify a notification appears ("Scheduled: ...")
+- [ ] Verify Buddy's reminder response appears as a subtitle
+- [ ] Check server logs for `[scheduler] Firing '...'` and `[scheduler] One-shot '...' completed`
+
+### Recurring Schedule
+
+- [ ] Ask: "Every day at 9am, tell me good morning"
+- [ ] Verify Buddy creates a recurring schedule with cron expression `0 9 * * *`
+- [ ] Verify Buddy confirms the schedule name and next run time
+
+### List and Delete Schedules
+
+- [ ] Ask: "What schedules do I have?"
+- [ ] Verify Buddy calls `list_schedules` and shows the results
+- [ ] Ask: "Delete the good morning one"
+- [ ] Verify Buddy calls `delete_schedule` to remove it
+- [ ] Ask: "What schedules do I have?" again — verify it's gone
+
+### Offline Delivery
+
+- [ ] Create a one-shot schedule that fires in 1 minute
+- [ ] Close the browser tab
+- [ ] Wait 2 minutes
+- [ ] Reopen the app and log in
+- [ ] Verify notification: "1 scheduled task ran while you were away"
+- [ ] Verify the agent's scheduled response is replayed
+
+### Server Startup
+
+- [ ] Restart the server
+- [ ] Verify `[scheduler] Starting scheduler (polling every 30s)` appears in server logs
+
+---
+
 ## Basic Functionality (Smoke Tests)
 
 ### Canvas Commands

@@ -175,6 +175,16 @@ export default function Canvas() {
         </div>
       ) : null}
 
+      {/* Confirmation cards render regardless of canvas mode */}
+      {canvas.elements.some((el) => el.type === "confirmation") && canvas.mode !== "content" && canvas.mode !== "media" && (
+        <div className="absolute inset-0 z-10 overflow-y-auto">
+          <ElementsLayout
+            elements={canvas.elements.filter((el) => el.type === "confirmation")}
+            layout="single"
+          />
+        </div>
+      )}
+
       {/* Notification overlay */}
       <Notification
         notification={canvas.notification}

@@ -61,6 +61,8 @@ function readPassword(rl, prompt) {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
     if (stdin.isTTY) stdin.setRawMode(true);
+    const origWrite = rl._writeToOutput;
+    rl._writeToOutput = function () {};
 
     let password = "";
     const onData = (ch) => {
@@ -68,6 +70,7 @@ function readPassword(rl, prompt) {
       if (c === "\n" || c === "\r" || c === "\u0004") {
         if (stdin.isTTY) stdin.setRawMode(wasRaw);
         stdin.removeListener("data", onData);
+        rl._writeToOutput = origWrite;
         process.stdout.write("\n");
         resolve(password);
       } else if (c === "\u0003") {

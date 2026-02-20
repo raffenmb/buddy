@@ -61,20 +61,21 @@ export function seedBuddyAgent(userId) {
     return;
   }
 
-  // Check if the plain 'buddy' id is taken by another user
-  const legacyBuddy = db.prepare("SELECT id, user_id FROM agents WHERE id = 'buddy'").get();
-  if (legacyBuddy) return; // buddy id taken, skip
+  // 'buddy' id is taken by another user — create a user-specific buddy
+  const agentId = db.prepare("SELECT id FROM agents WHERE id = 'buddy'").get()
+    ? `buddy-${userId.slice(0, 8)}`
+    : "buddy";
 
   db.prepare(`
     INSERT INTO agents (id, name, model, system_prompt, user_id)
-    VALUES ('buddy', 'Buddy', ?, ?, ?)
-  `).run(defaultModel, BUDDY_PERSONALITY, userId);
+    VALUES (?, 'Buddy', ?, ?, ?)
+  `).run(agentId, defaultModel, BUDDY_PERSONALITY, userId);
 
-  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy' AND enabled_tools IS NULL").run(
-    JSON.stringify(["search-youtube", "remember-fact"])
+  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = ? AND enabled_tools IS NULL").run(
+    JSON.stringify(["search-youtube", "remember-fact"]), agentId
   );
 
-  const dir = ensureAgentDir("buddy");
+  const dir = ensureAgentDir(agentId);
   if (!existsSync(join(dir, "identity.md"))) {
     writeFileSync(join(dir, "identity.md"), BUDDY_PERSONALITY, "utf-8");
   }

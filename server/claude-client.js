@@ -56,6 +56,7 @@ function buildSystemPrompt(agent, memories) {
     .trim();
 
   basePrompt += `\n\nYour agent ID is: ${agent.id}`;
+  basePrompt += `\n\nCurrent date and time: ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
 
   // Inject metadata-only skill listing — full prompts loaded on-demand via read_file tool
   const enabledTools = parseEnabledTools(agent.enabled_tools);
@@ -199,11 +200,14 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
     const toolResults = await Promise.all(
       toolUseBlocks.map(async (toolUse) => {
         if (toolUse.name === "shell_exec") {
+          console.log(`[shell_exec] Command: ${toolUse.input.command}`);
+          console.log(`[shell_exec] Has confirmation callback: ${!!callbacks.requestConfirmation}`);
           const result = await executeShell(toolUse.input.command, {
             cwd: toolUse.input.cwd,
             timeout: Math.min(toolUse.input.timeout || 30000, 600000),
             requestConfirmation: callbacks.requestConfirmation,
           });
+          console.log(`[shell_exec] Result: denied=${result.denied}, exitCode=${result.exitCode}, stderr=${result.stderr}`);
           const combined = [result.stdout, result.stderr].filter(Boolean).join("\n");
           const { content: summarized, logPath } = await maybeSummarize(combined, "shell output");
           return {
@@ -307,6 +311,7 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
           };
         }
         if (toolUse.name === "create_schedule") {
+          console.log(`[create_schedule] Input:`, JSON.stringify(toolUse.input));
           try {
             const result = createSchedule({
               ...toolUse.input,

@@ -17,9 +17,12 @@ function BuddyApp() {
   const { state, dispatch } = useBuddy();
 
   useEffect(() => {
-    apiFetch(`/api/agents/${state.agent.id}`)
-      .then((data) => {
-        dispatch({ type: "SET_AGENT", payload: { name: data.name, avatar: data.avatar || "buddy" } });
+    apiFetch("/api/agents")
+      .then((agents) => {
+        if (agents.length > 0) {
+          const agent = agents[0];
+          dispatch({ type: "SET_AGENT", payload: { id: agent.id, name: agent.name, avatar: agent.avatar || "buddy" } });
+        }
       })
       .catch(() => {});
   }, []);
