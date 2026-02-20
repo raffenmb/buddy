@@ -17,7 +17,7 @@ import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent, attachUserToSharedAgents } from "./agents.js";
 import db from "./db.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
-import { resetSession, getCanvasState, applyCanvasCommand } from "./session.js";
+import { resetSession, getCanvasState } from "./session.js";
 import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
@@ -450,21 +450,23 @@ app.post("/api/prompt", (req, res) => {
       // Signal that Buddy is thinking
       send({ type: "processing", status: true });
 
-      // Update this user's WS connection agentId
+      // Check if agent is actually changing
+      let previousAgentId = null;
       for (const [ws, conn] of wsConnections) {
-        if (conn.userId === userId) conn.agentId = agentId;
+        if (conn.userId === userId) {
+          previousAgentId = conn.agentId;
+          conn.agentId = agentId;
+        }
       }
 
-      // Agent switch notification
       const agent = getAgent(agentId);
-      if (agent) {
-        // Clear canvas (both broadcast and server state)
+      if (agent && previousAgentId !== agentId) {
+        // Agent actually changed — clear frontend canvas and load new agent's canvas
         send({
           type: "canvas_command",
           command: "canvas_set_mode",
           params: { mode: "clear" },
         });
-        applyCanvasCommand(userId, "canvas_set_mode", { mode: "clear" });
 
         send({
           type: "agent_switch",
@@ -476,6 +478,30 @@ app.post("/api/prompt", (req, res) => {
             voice_config: agent.voice_config,
           },
         });
+
+        // Rehydrate new agent's canvas
+        const newCanvas = getCanvasState(userId, agentId);
+        if (newCanvas.length > 0) {
+          send({
+            type: "canvas_command",
+            command: "canvas_set_mode",
+            params: { mode: "content" },
+          });
+          const commandMap = {
+            card: "canvas_add_card",
+            text: "canvas_show_text",
+            chart: "canvas_show_chart",
+            table: "canvas_show_table",
+            media: "canvas_play_media",
+          };
+          for (const el of newCanvas) {
+            const { type: elType, ...params } = el;
+            const command = commandMap[elType];
+            if (command) {
+              send({ type: "canvas_command", command, params });
+            }
+          }
+        }
       }
 
       // Find a WS for confirmation callbacks
@@ -557,8 +583,8 @@ wss.on("connection", (ws, req) => {
     console.log(`[scheduler] Delivered ${pending.length} pending messages to ${decoded.username}`);
   }
 
-  // Send last-known canvas state to rehydrate the frontend
-  const initialCanvas = getCanvasState(decoded.userId);
+  // Send last-known canvas state to rehydrate the frontend (default agent)
+  const initialCanvas = getCanvasState(decoded.userId, "buddy");
   if (initialCanvas.length > 0) {
     sendTo(ws, {
       type: "canvas_command",

@@ -97,41 +97,61 @@ export function resetSession(userId, agentId = null) {
     ).run(sessionId, agentId);
   } else {
     db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
-    // Clear canvas state on full session reset
+    // Clear all canvas states on full session reset
     db.prepare(
-      "UPDATE sessions SET canvas_state = '{\"elements\":[]}' WHERE id = ?"
+      "UPDATE sessions SET canvas_state = '{}' WHERE id = ?"
     ).run(sessionId);
   }
 }
 
-export function getCanvasState(userId) {
+/**
+ * Canvas state is stored as a JSON object keyed by agent ID:
+ * { "buddy": [...elements], "other-agent": [...elements] }
+ * This allows each agent to have its own persistent canvas.
+ */
+function getAllCanvasStates(userId) {
   const sessionId = ensureSession(userId);
   const row = db.prepare(
     "SELECT canvas_state FROM sessions WHERE id = ?"
   ).get(sessionId);
-  if (!row || !row.canvas_state) return [];
+  if (!row || !row.canvas_state) return {};
   try {
     const parsed = JSON.parse(row.canvas_state);
-    return parsed.elements || [];
+    // Migrate old format: { elements: [] } -> treat as "buddy" agent
+    if (Array.isArray(parsed.elements)) {
+      return { buddy: parsed.elements };
+    }
+    return parsed;
   } catch {
-    return [];
+    return {};
   }
 }
 
-export function updateCanvasState(userId, elements) {
+function saveAllCanvasStates(userId, states) {
   const sessionId = ensureSession(userId);
   db.prepare(
     "UPDATE sessions SET canvas_state = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(JSON.stringify({ elements }), sessionId);
+  ).run(JSON.stringify(states), sessionId);
 }
 
-export function applyCanvasCommand(userId, commandName, params) {
-  const elements = getCanvasState(userId);
+export function getCanvasState(userId, agentId = "buddy") {
+  const states = getAllCanvasStates(userId);
+  return states[agentId] || [];
+}
+
+export function updateCanvasState(userId, agentId, elements) {
+  const states = getAllCanvasStates(userId);
+  states[agentId] = elements;
+  saveAllCanvasStates(userId, states);
+}
+
+export function applyCanvasCommand(userId, agentId, commandName, params) {
+  const elements = getCanvasState(userId, agentId);
 
   switch (commandName) {
     case "canvas_set_mode": {
       if (params.mode === "clear") {
-        updateCanvasState(userId, []);
+        updateCanvasState(userId, agentId, []);
         return;
       }
       return;
@@ -171,5 +191,5 @@ export function applyCanvasCommand(userId, commandName, params) {
       return;
   }
 
-  updateCanvasState(userId, elements);
+  updateCanvasState(userId, agentId, elements);
 }

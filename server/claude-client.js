@@ -97,7 +97,7 @@ function buildSystemPrompt(agent, memories, userId) {
 
   // Inject current canvas state so Claude knows what the user sees
   if (userId) {
-    const canvasElements = getCanvasState(userId);
+    const canvasElements = getCanvasState(userId, agent.id);
     if (canvasElements.length > 0) {
       basePrompt += "\n\n## What's currently on the canvas\nThe user can see the following elements on their screen right now:";
       for (const el of canvasElements) {
@@ -372,7 +372,7 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
         }
         // Canvas tool — track state server-side and return rendered
         if (toolUse.name.startsWith("canvas_")) {
-          applyCanvasCommand(userId, toolUse.name, toolUse.input);
+          applyCanvasCommand(userId, agentId, toolUse.name, toolUse.input);
         }
         return {
           type: "tool_result",
