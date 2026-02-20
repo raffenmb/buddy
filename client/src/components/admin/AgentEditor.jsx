@@ -92,7 +92,16 @@ export default function AgentEditor({ agentId, onDeleted }) {
   }
 
   async function handleDelete() {
-    const confirmed = await showConfirm(`Delete agent "${name}"? This cannot be undone.`);
+    const isShared = agent.is_shared === 1;
+    const isLastUser = isShared && agent.userCount === 1;
+
+    const message = isShared && !isLastUser
+      ? `Remove "${name}" from your agents? Other users still have access.`
+      : isShared && isLastUser
+        ? `You're the last user. Delete "${name}" permanently? This cannot be undone.`
+        : `Delete agent "${name}"? This cannot be undone.`;
+
+    const confirmed = await showConfirm(message);
     if (!confirmed) return;
     try {
       await apiFetch(`/api/agents/${agentId}`, { method: "DELETE" });
@@ -275,9 +284,9 @@ export default function AgentEditor({ agentId, onDeleted }) {
           <button
             onClick={handleDelete}
             className="w-full mt-3 px-5 py-2 text-sm font-medium transition-colors"
-            style={{ color: "#EF4444" }}
+            style={{ color: agent?.is_shared === 1 && agent?.userCount > 1 ? "var(--color-text-secondary)" : "#EF4444" }}
           >
-            Delete Agent
+            {agent?.is_shared === 1 && agent?.userCount > 1 ? "Leave Agent" : "Delete Agent"}
           </button>
         )}
       </div>

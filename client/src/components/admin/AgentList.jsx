@@ -83,7 +83,7 @@ export default function AgentList() {
                   >
                     {a.name}
                   </span>
-                  {!a.user_id && (
+                  {a.is_shared === 1 && a.userCount >= 2 && (
                     <span
                       className="text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
                       style={{
