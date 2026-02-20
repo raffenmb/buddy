@@ -47,6 +47,10 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use("/api", authMiddleware);
 
 // ─── Per-Connection State ─────────────────────────────────────────────────────
@@ -459,10 +463,11 @@ app.post("/api/prompt", (req, res) => {
         }
       }
 
-      // Only send agent switch + canvas rehydration when the agent actually changes
+      // Only send agent switch when the agent actually changes
       // (skip null→agentId on first prompt — WS connect already handled rehydration)
       const agent = getAgent(agentId);
       if (agent && previousAgentId && previousAgentId !== agentId) {
+        const newCanvas = getCanvasState(userId, agentId);
         send({
           type: "agent_switch",
           agent: {
@@ -472,11 +477,8 @@ app.post("/api/prompt", (req, res) => {
             avatar_config: agent.avatar_config,
             voice_config: agent.voice_config,
           },
+          canvas: newCanvas,
         });
-
-        // Atomically rehydrate the new agent's canvas (single message, single dispatch)
-        const newCanvas = getCanvasState(userId, agentId);
-        send({ type: "canvas_rehydrate", elements: newCanvas });
       }
 
       // Find a WS for confirmation callbacks
