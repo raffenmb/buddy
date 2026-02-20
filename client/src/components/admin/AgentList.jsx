@@ -11,6 +11,7 @@ export default function AgentList() {
   const [showCreate, setShowCreate] = useState(false);
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
+  const [createShared, setCreateShared] = useState(false);
 
   useEffect(() => {
     loadAgents();
@@ -33,11 +34,12 @@ export default function AgentList() {
     try {
       await apiFetch("/api/agents", {
         method: "POST",
-        body: { id, name },
+        body: { id, name, shared: createShared },
       });
       setNewId("");
       setNewName("");
       setShowCreate(false);
+      setCreateShared(false);
       await loadAgents();
       dispatch({ type: "ADMIN_PUSH_EDITOR", payload: id });
     } catch (err) {
@@ -125,6 +127,15 @@ export default function AgentList() {
               border: "1px solid var(--color-border)",
             }}
           >
+            <div
+              className="text-xs font-medium px-2 py-1 rounded-lg self-start"
+              style={{
+                backgroundColor: "var(--color-bg-raised)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              {createShared ? "Shared Agent" : "Personal Agent"}
+            </div>
             <input
               value={newId}
               onChange={(e) => setNewId(e.target.value)}
@@ -170,18 +181,32 @@ export default function AgentList() {
             </div>
           </div>
         ) : (
-          <button
-            onClick={() => setShowCreate(true)}
-            className="w-full text-sm px-4 py-3 rounded-2xl font-medium transition-colors"
-            style={{
-              backgroundColor: "var(--color-bg-surface)",
-              boxShadow: "var(--shadow-card)",
-              border: "1px solid var(--color-border)",
-              color: "var(--color-text-secondary)",
-            }}
-          >
-            + New Agent
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setCreateShared(false); setShowCreate(true); }}
+              className="flex-1 text-sm px-4 py-3 rounded-2xl font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--color-bg-surface)",
+                boxShadow: "var(--shadow-card)",
+                border: "1px solid var(--color-border)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              + New Agent
+            </button>
+            <button
+              onClick={() => { setCreateShared(true); setShowCreate(true); }}
+              className="flex-1 text-sm px-4 py-3 rounded-2xl font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--color-bg-surface)",
+                boxShadow: "var(--shadow-card)",
+                border: "1px solid var(--color-border)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              + Shared Agent
+            </button>
+          </div>
         )}
       </div>
     </div>
