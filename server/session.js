@@ -97,10 +97,14 @@ export function resetSession(userId, agentId = null) {
     ).run(sessionId, agentId);
   } else {
     db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
+    // Clear canvas state on full session reset
+    db.prepare(
+      "UPDATE sessions SET canvas_state = '{\"elements\":[]}' WHERE id = ?"
+    ).run(sessionId);
   }
 }
 
-export function getCanvasState(userId, agentId = "buddy") {
+export function getCanvasState(userId) {
   const sessionId = ensureSession(userId);
   const row = db.prepare(
     "SELECT canvas_state FROM sessions WHERE id = ?"

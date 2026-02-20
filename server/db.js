@@ -113,6 +113,9 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN canvas_state TEXT DEFAULT '{\"ele
 // Index for scheduler polling
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at) WHERE enabled = 1"); } catch {}
 
+// Composite index for sliding window message query
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_messages_session_agent_id ON messages(session_id, agent_id, id)"); } catch {}
+
 // Add is_shared column to agents
 try { db.exec("ALTER TABLE agents ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0"); } catch {}
 
