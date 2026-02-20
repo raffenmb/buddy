@@ -110,6 +110,36 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id)
 // Index for scheduler polling
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at) WHERE enabled = 1"); } catch {}
 
+// Add is_shared column to agents
+try { db.exec("ALTER TABLE agents ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+// Create agent_users junction table for shared agent membership
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_users (
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (agent_id, user_id)
+  );
+`);
+
+// Migrate existing shared agents (user_id IS NULL) to new model
+const legacyShared = db.prepare("SELECT id FROM agents WHERE user_id IS NULL AND is_shared = 0").all();
+if (legacyShared.length > 0) {
+  const allUsers = db.prepare("SELECT id FROM users").all();
+  const markShared = db.prepare("UPDATE agents SET is_shared = 1 WHERE id = ?");
+  const insertMembership = db.prepare("INSERT OR IGNORE INTO agent_users (agent_id, user_id) VALUES (?, ?)");
+
+  const migrate = db.transaction(() => {
+    for (const agent of legacyShared) {
+      markShared.run(agent.id);
+      for (const user of allUsers) {
+        insertMembership.run(agent.id, user.id);
+      }
+    }
+  });
+  migrate();
+}
+
 // Seed default session
 db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('default')").run();
 
