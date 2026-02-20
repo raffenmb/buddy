@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import tools, { PLATFORM_TOOL_NAMES } from "./tools.js";
 import { listSkills } from "./skills.js";
-import { addUserMessage, addAssistantResponse, addToolResults, getMessages } from "./session.js";
+import { addUserMessage, addAssistantResponse, addToolResults, getMessages, applyCanvasCommand, getCanvasState } from "./session.js";
 import { getAgent, getMemories, getIdentity, getUserInfo, updateAgent } from "./agents.js";
 import { executeShell } from "./shell/executor.js";
 import { readFile, writeFile, listDirectory } from "./shell/filesystem.js";
@@ -356,6 +356,10 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
               is_error: true,
             };
           }
+        }
+        // Canvas tool — track state server-side and return rendered
+        if (toolUse.name.startsWith("canvas_")) {
+          applyCanvasCommand(userId, toolUse.name, toolUse.input);
         }
         return {
           type: "tool_result",
