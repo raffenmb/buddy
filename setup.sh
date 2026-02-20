@@ -120,8 +120,8 @@ echo "${BOLD}=========================================${RESET}"
 echo "${BOLD}  Buddy — Guided Installer${RESET}"
 echo "${BOLD}=========================================${RESET}"
 echo ""
-echo "  This script will install everything Buddy needs and get"
-echo "  it running. It will ask before installing anything."
+echo "  This script will install everything Buddy needs to get up"
+echo "  and running. It will ask before installing anything."
 echo ""
 echo "  Log file: $LOG_FILE"
 
@@ -322,7 +322,7 @@ if [ "$SKIP_ENV" = false ]; then
 
     # Model selection
     echo ""
-    echo "  Select a Claude model:"
+    echo "  Select a default Claude model (you can change this later in server/.env):"
     echo "    ${BOLD}1${RESET}) Haiku   — fast and cheap       (claude-haiku-4-5-20251001)"
     echo "    ${BOLD}2${RESET}) Sonnet  — balanced (default)   (claude-sonnet-4-5-20250929)"
     echo "    ${BOLD}3${RESET}) Opus    — most capable         (claude-opus-4-5-20250501)"
@@ -368,8 +368,9 @@ run_logged "Building client" npm --prefix "$SCRIPT_DIR" run build || \
 
 step "Creating admin account..."
 
-# Start server in background (exec replaces subshell so SERVER_PID = node PID)
-(cd "$SCRIPT_DIR/server" && exec env NODE_ENV=production node index.js) >> "$LOG_FILE" 2>&1 &
+# Start server in background (BUDDY_SKIP_SETUP=1 skips interactive CLI prompts,
+# exec replaces subshell so SERVER_PID = node PID)
+(cd "$SCRIPT_DIR/server" && exec env NODE_ENV=production BUDDY_SKIP_SETUP=1 node index.js) >> "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait up to 30 seconds for server to be ready

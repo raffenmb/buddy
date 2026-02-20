@@ -10,6 +10,7 @@ import { seedBuddyAgent } from "./agents.js";
 import db from "./db.js";
 
 export async function runSetupIfNeeded() {
+  if (process.env.BUDDY_SKIP_SETUP === "1") return;
   if (getUserCount() > 0) return;
 
   console.log("\n  Welcome to Buddy! Let's create your admin account.\n");
