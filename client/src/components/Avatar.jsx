@@ -2,15 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useBuddy } from "../context/BuddyState";
 import { AVATAR_PRESETS } from "../assets/avatars/index.js";
 import useEntryAnimation from "../hooks/useEntryAnimation";
-
-// Module-level so it persists across unmount/remount (navigating to admin and back)
-let lastSpokenText = null;
+import useAudioPlayer from "../hooks/useAudioPlayer";
 
 export default function Avatar() {
-  const { state, dispatch } = useBuddy();
+  const { state } = useBuddy();
   const { avatar, subtitle, input, agent } = state;
+  useAudioPlayer();
   const [showTalkFrame, setShowTalkFrame] = useState(false);
-  const talkTimerRef = useRef(null);
   const mouthIntervalRef = useRef(null);
   const bobRef = useRef(null);
   const bobYRef = useRef(0);
@@ -70,41 +68,6 @@ export default function Avatar() {
     }
     return () => clearInterval(thinkingRef.current);
   }, [input.isProcessing, subtitle.visible]);
-
-  // TTS + talk duration — only speak text that hasn't been spoken yet
-  useEffect(() => {
-    if (subtitle.visible && subtitle.text && subtitle.text !== lastSpokenText) {
-      lastSpokenText = subtitle.text;
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(subtitle.text);
-      utterance.rate = 1;
-      utterance.pitch = 1;
-
-      utterance.onend = () => {
-        dispatch({ type: "STOP_TALKING" });
-      };
-
-      utterance.onerror = () => {
-        dispatch({ type: "STOP_TALKING" });
-      };
-
-      window.speechSynthesis.speak(utterance);
-
-      const fallbackDuration = Math.min(
-        Math.max((subtitle.text.length / 15) * 1000, 1000),
-        15000
-      );
-      talkTimerRef.current = setTimeout(() => {
-        dispatch({ type: "STOP_TALKING" });
-      }, fallbackDuration);
-    }
-
-    return () => {
-      clearTimeout(talkTimerRef.current);
-      window.speechSynthesis.cancel();
-    };
-  }, [subtitle.visible, subtitle.text, dispatch]);
 
   const preset = AVATAR_PRESETS[agent.avatar] || AVATAR_PRESETS.buddy;
   const avatarSrc = showTalkFrame ? preset.talking : preset.idle;
