@@ -84,10 +84,8 @@ run_logged() {
 read_password() {
     local prompt="$1"
     local varname="$2"
-    echo "  ${prompt} (typing is hidden)"
-    stty -echo 2>/dev/null || true
-    read -r password_input
-    stty echo 2>/dev/null || true
+    printf "  %s (typing is hidden): " "$prompt"
+    read -r -s password_input
     echo ""
     eval "$varname=\$password_input"
 }
@@ -105,6 +103,7 @@ die() {
 
 # Cleanup: kill temp server if running
 cleanup() {
+    stty echo 2>/dev/null || true
     if [ -n "$SERVER_PID" ]; then
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
@@ -337,13 +336,13 @@ if [ "$SKIP_ENV" = false ]; then
         *) CLAUDE_MODEL="claude-sonnet-4-5-20250929" ;;
     esac
 
-    cat > "$SCRIPT_DIR/server/.env" << EOF
-ANTHROPIC_API_KEY=${API_KEY}
-ELEVENLABS_API_KEY=${ELEVENLABS_KEY}
-PORT=3001
-CLAUDE_MODEL=${CLAUDE_MODEL}
-BUDDY_ENV=production
-EOF
+    {
+        printf 'ANTHROPIC_API_KEY=%s\n' "$API_KEY"
+        printf 'ELEVENLABS_API_KEY=%s\n' "${ELEVENLABS_KEY:-}"
+        printf 'PORT=3001\n'
+        printf 'CLAUDE_MODEL=%s\n' "$CLAUDE_MODEL"
+        printf 'BUDDY_ENV=production\n'
+    } > "$SCRIPT_DIR/server/.env"
 
     ok "Configuration saved to server/.env (model: ${CLAUDE_MODEL})"
 fi
@@ -369,7 +368,7 @@ run_logged "Building client" npm --prefix "$SCRIPT_DIR" run build || \
 step "Creating admin account..."
 
 # Start server in background
-(cd "$SCRIPT_DIR/server" && NODE_ENV=production node index.js) &
+(cd "$SCRIPT_DIR/server" && NODE_ENV=production node index.js) >> "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait up to 30 seconds for server to be ready
@@ -483,6 +482,8 @@ if [ -n "$SERVER_PID" ]; then
     wait "$SERVER_PID" 2>/dev/null || true
     SERVER_PID=""
 fi
+
+unset ADMIN_PASS ADMIN_PASS_CONFIRM JSON_PASS ESCAPED_PASS JSON_BODY password_input 2>/dev/null || true
 
 info "Temporary server stopped."
 
