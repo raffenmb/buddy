@@ -175,7 +175,8 @@ BUDDY_ENV=production    # Always-on PC — full host access
 
 | Table | Purpose |
 |-------|---------|
-| `agents` | Agent configs (model, system_prompt, avatar, voice, enabled_tools) |
+| `agents` | Agent configs (model, system_prompt, avatar, voice, enabled_tools, is_shared) |
+| `agent_users` | Many-to-many shared agent membership (agent_id, user_id) |
 | `agent_memory` | Per-agent key-value memory |
 | `sessions` | Conversation sessions |
 | `messages` | Session message history |
@@ -191,7 +192,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/tools.js` — Tool definitions (10 canvas + 13 platform). Exports `PLATFORM_TOOL_NAMES`.
 - `server/response-splitter.js` — Separates subtitle text from canvas commands
 - `server/db.js` — SQLite setup at `~/.buddy/buddy.db`, schema migrations
-- `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`. Buddy defaults to `["search-youtube", "remember-fact"]` enabled skills. Includes startup migration to rename old tool names and remove platform tools from enabled_tools.
+- `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`. Buddy defaults to `["search-youtube", "remember-fact"]` enabled skills. Shared agents use `is_shared` flag + `agent_users` junction table for many-to-many membership. Includes startup migration to rename old tool names and remove platform tools from enabled_tools.
 - `server/skills.js` — Skill scanning, validation, CRUD at `~/.buddy/skills/`
 - `server/session.js` — Conversation history management
 - `server/shell/executor.js` — Host command execution via `child_process.spawn`, guard validation, confirmation callback
