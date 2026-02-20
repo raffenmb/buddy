@@ -150,6 +150,8 @@ app.post("/api/auth/register", (req, res) => {
   try {
     const isAdmin = userCount === 0;
     const user = createUser({ username, password, displayName, isAdmin });
+    seedBuddyAgent(user.id);
+    attachUserToSharedAgents(user.id);
     const token = signToken({ id: user.id, username: user.username, is_admin: isAdmin ? 1 : 0 });
     res.status(201).json({
       token,
@@ -277,9 +279,7 @@ app.post("/api/agents", (req, res) => {
 });
 
 app.put("/api/agents/:id", (req, res) => {
-  const agent = getAgent(req.params.id);
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
-  if (agent.user_id && agent.user_id !== req.user.userId) {
+  if (!canAccessAgent(req.params.id, req.user.userId)) {
     return res.status(403).json({ error: "Access denied" });
   }
 

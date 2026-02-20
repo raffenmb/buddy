@@ -47,7 +47,7 @@ export async function runSetupIfNeeded() {
 
     // Claim legacy single-user data for the new admin
     db.prepare("UPDATE sessions SET user_id = ? WHERE id = 'default' AND user_id IS NULL").run(user.id);
-    db.prepare("UPDATE agents SET user_id = ? WHERE user_id IS NULL").run(user.id);
+    db.prepare("UPDATE agents SET user_id = ? WHERE user_id IS NULL AND is_shared = 0").run(user.id);
 
     console.log(`\n  Admin account "${user.username}" created. Starting server...\n`);
   } finally {
