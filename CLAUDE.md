@@ -194,7 +194,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/db.js` — SQLite setup at `~/.buddy/buddy.db`, schema migrations
 - `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`. Buddy defaults to `["search-youtube", "remember-fact"]` enabled skills. Shared agents use `is_shared` flag + `agent_users` junction table for many-to-many membership. Includes startup migration to rename old tool names and remove platform tools from enabled_tools.
 - `server/skills.js` — Skill scanning, validation, CRUD at `~/.buddy/skills/`
-- `server/session.js` — Conversation history management
+- `server/session.js` — Conversation history management with token-budgeted sliding window. Canvas state persistence (server-side tracking of current canvas elements).
 - `server/shell/executor.js` — Host command execution via `child_process.spawn`, guard validation, confirmation callback
 - `server/shell/guards.js` — Destructive command detection (hard-blocked, needs-confirmation, dev-mode restrictions)
 - `server/shell/filesystem.js` — Host filesystem operations (readFile, writeFile, listDirectory), dev-mode write restrictions
@@ -242,6 +242,8 @@ BUDDY_ENV=development
 - **Skills are the single extensibility layer** — no separate tool registry. Built-in tools are platform primitives. Everything the agent builds on top is a skill.
 - **On-demand skill loading** — only name/description in system prompt. Agent reads full SKILL.md via `read_file` when relevant (Anthropic's recommended pattern).
 - **All user data lives in `~/.buddy/`** — decoupled from the codebase. Skills, agents, processes, logs, shared files, database, and config all live outside the repo.
+- **Sliding message window** — `getMessages()` returns only recent messages within a ~120K token budget. Old messages stay in SQLite but aren't sent to Claude. Query uses `LIMIT 200 ORDER BY id DESC` for O(1) performance regardless of table size.
+- **Server-side canvas state** — canvas elements are tracked in the `sessions.canvas_state` column. Injected into the system prompt so Claude always knows what's on screen. Canvas persists across page refreshes and survives beyond the message window. Confirmation elements are excluded (ephemeral, 60s timeout).
 
 ## Cross-Platform Parity Rule
 
