@@ -22,6 +22,7 @@ import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
 import { startScheduler, deliverPendingMessages } from "./scheduler.js";
+import { isAvailable as ttsIsAvailable, listVoices } from "./tts.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -441,6 +442,21 @@ app.delete("/api/skills/:folderName", (req, res) => {
     return res.status(404).json({ error: result.error });
   }
   res.json({ status: "deleted" });
+});
+
+// ─── TTS Routes ─────────────────────────────────────────────────────────────
+
+app.get("/api/tts/voices", async (req, res) => {
+  try {
+    const voices = await listVoices();
+    res.json(voices);
+  } catch {
+    res.json([]);
+  }
+});
+
+app.get("/api/tts/status", (req, res) => {
+  res.json({ available: ttsIsAvailable() });
 });
 
 // ─── Session Routes ───────────────────────────────────────────────────────────
