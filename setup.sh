@@ -367,8 +367,8 @@ run_logged "Building client" npm --prefix "$SCRIPT_DIR" run build || \
 
 step "Creating admin account..."
 
-# Start server in background
-(cd "$SCRIPT_DIR/server" && NODE_ENV=production node index.js) >> "$LOG_FILE" 2>&1 &
+# Start server in background (exec replaces subshell so SERVER_PID = node PID)
+(cd "$SCRIPT_DIR/server" && exec env NODE_ENV=production node index.js) >> "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait up to 30 seconds for server to be ready
