@@ -1,18 +1,24 @@
 #!/bin/bash
 
 # ─────────────────────────────────────────────────────────────
-# Buddy — Zero-Friction Guided Installer
-# Detects your OS, installs prerequisites, and gets Buddy running.
+# Buddy — Guided Installer
+# Takes you from git clone to a running Buddy instance.
 # Usage: bash setup.sh
 # ─────────────────────────────────────────────────────────────
 
-TOTAL_STEPS=10
+set -euo pipefail
+
+TOTAL_STEPS=9
 CURRENT_STEP=0
 LOG_FILE="$HOME/buddy-setup.log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TAILSCALE_IP=""
+SERVER_PID=""
+ADMIN_USERNAME=""
 
 # ─── Color & formatting helpers ──────────────────────────────
 
-if [ -t 1 ] && command -v tput &> /dev/null && [ "$(tput colors 2>/dev/null)" -ge 8 ] 2>/dev/null; then
+if [ -t 1 ] && command -v tput &>/dev/null && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ] 2>/dev/null; then
     GREEN=$(tput setaf 2)
     RED=$(tput setaf 1)
     YELLOW=$(tput setaf 3)
@@ -58,10 +64,12 @@ run_logged() {
     local label="$1"
     shift
     echo "  Running: $label"
-    echo "" >> "$LOG_FILE"
-    echo "=== $label ===" >> "$LOG_FILE"
-    echo "Command: $*" >> "$LOG_FILE"
-    echo "Time: $(date)" >> "$LOG_FILE"
+    {
+        echo ""
+        echo "=== $label ==="
+        echo "Command: $*"
+        echo "Time: $(date)"
+    } >> "$LOG_FILE"
     if "$@" >> "$LOG_FILE" 2>&1; then
         ok "$label"
         return 0
@@ -72,10 +80,22 @@ run_logged() {
     fi
 }
 
+# Read a password with hidden input.
+read_password() {
+    local prompt="$1"
+    local varname="$2"
+    echo "  ${prompt} (typing is hidden)"
+    stty -echo 2>/dev/null || true
+    read -r password_input
+    stty echo 2>/dev/null || true
+    echo ""
+    eval "$varname=\$password_input"
+}
+
 die() {
     echo ""
     fail "$1"
-    if [ -n "$2" ]; then
+    if [ -n "${2:-}" ]; then
         info "$2"
     fi
     echo ""
@@ -83,7 +103,17 @@ die() {
     exit 1
 }
 
-# ─── Start ───────────────────────────────────────────────────
+# Cleanup: kill temp server if running
+cleanup() {
+    if [ -n "$SERVER_PID" ]; then
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+}
+
+trap cleanup EXIT
+
+# ─── Banner ──────────────────────────────────────────────────
 
 echo ""
 echo "${BOLD}=========================================${RESET}"
@@ -95,10 +125,20 @@ echo "  it running. It will ask before installing anything."
 echo ""
 echo "  Log file: $LOG_FILE"
 
-echo "=== Buddy Setup Started ===" > "$LOG_FILE"
-echo "Date: $(date)" >> "$LOG_FILE"
-echo "User: $(whoami)" >> "$LOG_FILE"
-echo "" >> "$LOG_FILE"
+{
+    echo "=== Buddy Setup Started ==="
+    echo "Date: $(date)"
+    echo "User: $(whoami)"
+    echo "Script dir: $SCRIPT_DIR"
+    echo ""
+} > "$LOG_FILE"
+
+# ─── Pre-flight checks ──────────────────────────────────────
+
+if [ ! -f "$SCRIPT_DIR/package.json" ] || [ ! -d "$SCRIPT_DIR/server" ] || [ ! -d "$SCRIPT_DIR/client" ]; then
+    die "Missing project files (package.json, server/, client/)." \
+        "Make sure you're running this from the buddy project directory."
+fi
 
 # ─── Step 1: Detect OS ──────────────────────────────────────
 
@@ -111,6 +151,7 @@ case "$(uname -s)" in
     Linux*)
         OS="linux"
         if [ -f /etc/os-release ]; then
+            # shellcheck source=/dev/null
             . /etc/os-release
             DISTRO="$ID"
         fi
@@ -137,21 +178,23 @@ elif [ "$OS" = "mac" ]; then
     ok "macOS detected ($(sw_vers -productVersion 2>/dev/null || echo 'unknown version'))"
 fi
 
-echo "OS=$OS" >> "$LOG_FILE"
-echo "DISTRO=$DISTRO" >> "$LOG_FILE"
+{
+    echo "OS=$OS"
+    echo "DISTRO=$DISTRO"
+} >> "$LOG_FILE"
 
-# ─── Step 2: Install build tools ────────────────────────────
+# ─── Step 2: Check/install build tools ──────────────────────
 
 step "Checking build tools (needed for native modules)..."
 
 NEED_BUILD_TOOLS=false
 
 if [ "$OS" = "linux" ]; then
-    if ! dpkg -s build-essential &> /dev/null || ! command -v python3 &> /dev/null; then
+    if ! dpkg -s build-essential &>/dev/null || ! command -v python3 &>/dev/null; then
         NEED_BUILD_TOOLS=true
     fi
 elif [ "$OS" = "mac" ]; then
-    if ! xcode-select -p &> /dev/null; then
+    if ! xcode-select -p &>/dev/null; then
         NEED_BUILD_TOOLS=true
     fi
 fi
@@ -167,10 +210,9 @@ if [ "$NEED_BUILD_TOOLS" = true ]; then
         elif [ "$OS" = "mac" ]; then
             info "This will open an Xcode Command Line Tools installer dialog."
             info "Click 'Install' in the dialog, then wait for it to finish."
-            xcode-select --install 2>> "$LOG_FILE" || true
-            # Wait for the install to finish
+            xcode-select --install 2>>"$LOG_FILE" || true
             echo "  Waiting for Xcode Command Line Tools installation..."
-            until xcode-select -p &> /dev/null; do
+            until xcode-select -p &>/dev/null; do
                 sleep 5
             done
             ok "Xcode Command Line Tools installed"
@@ -182,34 +224,37 @@ else
     ok "Build tools already installed"
 fi
 
-# ─── Step 3: Install Node.js ────────────────────────────────
+# ─── Step 3: Check/install Node.js 18+ ──────────────────────
 
 step "Checking Node.js..."
 
-if command -v node &> /dev/null; then
+install_node() {
+    if [ "$OS" = "linux" ]; then
+        run_logged "Adding NodeSource repository" bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -" || \
+            die "Failed to add NodeSource repository." "Check your internet connection."
+        run_logged "Installing Node.js 20" sudo apt-get install -y nodejs || \
+            die "Failed to install Node.js."
+    elif [ "$OS" = "mac" ]; then
+        if command -v brew &>/dev/null; then
+            run_logged "Installing Node.js 20 via Homebrew" brew install node@20 || \
+                die "Failed to install Node.js via Homebrew."
+        else
+            die "Homebrew is required to install Node.js on macOS." \
+                "Install Homebrew first: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        fi
+    fi
+    ok "Node.js $(node -v) installed"
+}
+
+if command -v node &>/dev/null; then
     NODE_VER=$(node -v)
-    # Check if version is 18+
     NODE_MAJOR=$(echo "$NODE_VER" | sed 's/^v//' | cut -d. -f1)
     if [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null; then
         ok "Node.js ${NODE_VER} found (meets requirement: v18+)"
     else
         warn "Node.js ${NODE_VER} found but v18+ is required."
         if ask_yn "Install Node.js 20?"; then
-            if [ "$OS" = "linux" ]; then
-                run_logged "Adding NodeSource repository" bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -" || \
-                    die "Failed to add NodeSource repository." "Check your internet connection."
-                run_logged "Installing Node.js 20" sudo apt-get install -y nodejs || \
-                    die "Failed to install Node.js."
-            elif [ "$OS" = "mac" ]; then
-                if command -v brew &> /dev/null; then
-                    run_logged "Installing Node.js 20 via Homebrew" brew install node@20 || \
-                        die "Failed to install Node.js via Homebrew."
-                else
-                    die "Node.js 18+ is required but your version is too old." \
-                        "Install Homebrew (https://brew.sh) then run: brew install node@20"
-                fi
-            fi
-            ok "Node.js $(node -v) installed"
+            install_node
         else
             die "Node.js 18+ is required." "Install it manually and re-run this script."
         fi
@@ -217,156 +262,45 @@ if command -v node &> /dev/null; then
 else
     warn "Node.js is not installed."
     if ask_yn "Install Node.js 20 now?"; then
-        if [ "$OS" = "linux" ]; then
-            run_logged "Adding NodeSource repository" bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -" || \
-                die "Failed to add NodeSource repository." "Check your internet connection."
-            run_logged "Installing Node.js 20" sudo apt-get install -y nodejs || \
-                die "Failed to install Node.js."
-        elif [ "$OS" = "mac" ]; then
-            if command -v brew &> /dev/null; then
-                run_logged "Installing Node.js 20 via Homebrew" brew install node@20 || \
-                    die "Failed to install Node.js via Homebrew."
-            else
-                die "Homebrew is required to install Node.js on macOS." \
-                    "Install Homebrew first: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-            fi
-        fi
-        ok "Node.js $(node -v) installed"
+        install_node
     else
         die "Node.js is required to run Buddy." "Install it manually and re-run this script."
     fi
 fi
 
 # Verify npm is available
-if ! command -v npm &> /dev/null; then
+if ! command -v npm &>/dev/null; then
     die "npm not found (it should come with Node.js)." \
         "Try reinstalling Node.js."
 fi
 
-# ─── Step 4: Install Docker ─────────────────────────────────
+# ─── Step 4: Configure .env ─────────────────────────────────
 
-step "Checking Docker..."
+step "Configuring environment..."
 
-DOCKER_AVAILABLE=false
-DOCKER_JUST_INSTALLED=false
+SKIP_ENV=false
 
-if command -v docker &> /dev/null; then
-    if docker info &> /dev/null 2>&1; then
-        ok "Docker is installed and running"
-        DOCKER_AVAILABLE=true
-    else
-        warn "Docker is installed but not running or you don't have permission."
-        if [ "$OS" = "linux" ]; then
-            info "Trying to start Docker..."
-            if sudo systemctl start docker 2>> "$LOG_FILE"; then
-                # Also check if user is in docker group
-                if docker info &> /dev/null 2>&1; then
-                    ok "Docker started successfully"
-                    DOCKER_AVAILABLE=true
-                else
-                    warn "Docker is running but your user can't access it."
-                    info "Adding you to the docker group..."
-                    sudo usermod -aG docker "$USER" 2>> "$LOG_FILE"
-                    warn "You've been added to the docker group."
-                    warn "You need to log out and log back in for this to take effect."
-                    warn "After logging back in, re-run: bash setup.sh"
-                    info "The script will continue without Docker for now."
-                fi
-            else
-                warn "Could not start Docker. Continuing without sandbox features."
-            fi
-        elif [ "$OS" = "mac" ]; then
-            warn "Please start Docker Desktop and re-run this script."
-            info "Continuing without Docker for now."
-        fi
-    fi
-else
-    warn "Docker is not installed."
-    info "Docker is used for the sandbox feature (lets Buddy run code safely)."
-    info "Buddy will work without it, but sandbox features will be disabled."
-    echo ""
-    if ask_yn "Install Docker now?"; then
-        if [ "$OS" = "linux" ]; then
-            run_logged "Installing Docker" bash -c "curl -fsSL https://get.docker.com | sh" || \
-                die "Failed to install Docker." "Try installing manually: https://docs.docker.com/engine/install/"
-            DOCKER_JUST_INSTALLED=true
-
-            # Add user to docker group
-            info "Adding your user to the docker group..."
-            sudo usermod -aG docker "$USER" 2>> "$LOG_FILE"
-
-            # Start Docker
-            run_logged "Starting Docker" sudo systemctl start docker || \
-                warn "Could not start Docker automatically."
-
-            # Try to activate the group without requiring re-login
-            # We'll use sg to run subsequent docker commands in this script
-            if sg docker -c "docker info" &> /dev/null 2>&1; then
-                ok "Docker installed and accessible"
-                DOCKER_AVAILABLE=true
-            else
-                warn "Docker installed but requires logout/login to use without sudo."
-                warn "After setup finishes, log out, log back in, and run: bash setup.sh"
-                info "The script will continue — Docker sandbox will be set up on next run."
-            fi
-        elif [ "$OS" = "mac" ]; then
-            if command -v brew &> /dev/null; then
-                run_logged "Installing Docker Desktop via Homebrew" brew install --cask docker || \
-                    die "Failed to install Docker Desktop." "Download manually: https://docker.com/products/docker-desktop"
-                warn "Docker Desktop has been installed but needs to be started."
-                info "Open Docker Desktop from your Applications folder, then re-run this script."
-                info "Continuing without Docker for now."
-            else
-                warn "Cannot auto-install Docker Desktop without Homebrew."
-                info "Download Docker Desktop: https://docker.com/products/docker-desktop"
-                info "Or install Homebrew first: https://brew.sh"
-                info "Continuing without Docker for now."
-            fi
-        fi
-    else
-        info "Skipping Docker. Buddy will work, but sandbox features will be disabled."
-        info "You can install Docker later and re-run this script."
-    fi
-fi
-
-# ─── Step 5: Clone check ────────────────────────────────────
-
-step "Checking project files..."
-
-if [ ! -f "package.json" ] || [ ! -d "server" ] || [ ! -d "client" ]; then
-    die "This script must be run from the buddy project directory." \
-        "Run: cd buddy && bash setup.sh"
-fi
-
-ok "Project files found"
-
-# ─── Step 6: API key configuration ───────────────────────────
-
-step "Configuring API key..."
-
-if [ -f server/.env ]; then
-    # Check if the key is actually set (not just the placeholder)
-    EXISTING_KEY=$(grep -o 'ANTHROPIC_API_KEY=.*' server/.env 2>/dev/null | cut -d= -f2)
+if [ -f "$SCRIPT_DIR/server/.env" ]; then
+    EXISTING_KEY=$(grep -o 'ANTHROPIC_API_KEY=.*' "$SCRIPT_DIR/server/.env" 2>/dev/null | cut -d= -f2 || true)
     if [ -n "$EXISTING_KEY" ] && [ "$EXISTING_KEY" != "sk-ant-..." ]; then
         ok "API key already configured in server/.env"
-        if ask_yn "Keep the existing API key?"; then
+        if ask_yn "Keep the existing configuration?"; then
             info "Keeping existing configuration."
-        else
-            rm server/.env
+            SKIP_ENV=true
         fi
     else
         info "server/.env exists but API key is not set."
-        rm server/.env
     fi
 fi
 
-if [ ! -f server/.env ]; then
+if [ "$SKIP_ENV" = false ]; then
+    # Anthropic API key (required)
     echo ""
     echo "  Buddy needs a Claude API key from Anthropic."
     echo "  ${CYAN}Get one at: https://console.anthropic.com/settings/keys${RESET}"
-    echo "  You'll need to add a payment method (API calls cost a few cents each)."
     echo ""
 
+    API_KEY=""
     while true; do
         read -r -p "  Paste your Anthropic API key: " API_KEY
         if [ -z "$API_KEY" ]; then
@@ -381,78 +315,240 @@ if [ ! -f server/.env ]; then
         fi
     done
 
-    cat > server/.env << EOF
-ANTHROPIC_API_KEY=$API_KEY
+    # ElevenLabs API key (optional)
+    echo ""
+    ELEVENLABS_KEY=""
+    read -r -p "  ElevenLabs API key (press Enter to skip): " ELEVENLABS_KEY
+
+    # Model selection
+    echo ""
+    echo "  Select a Claude model:"
+    echo "    ${BOLD}1${RESET}) Haiku   — fast and cheap       (claude-haiku-4-5-20251001)"
+    echo "    ${BOLD}2${RESET}) Sonnet  — balanced (default)   (claude-sonnet-4-5-20250929)"
+    echo "    ${BOLD}3${RESET}) Opus    — most capable         (claude-opus-4-5-20250501)"
+    echo ""
+
+    MODEL_CHOICE=""
+    read -r -p "  Choose [1/2/3] (default: 2): " MODEL_CHOICE
+
+    case "$MODEL_CHOICE" in
+        1) CLAUDE_MODEL="claude-haiku-4-5-20251001" ;;
+        3) CLAUDE_MODEL="claude-opus-4-5-20250501" ;;
+        *) CLAUDE_MODEL="claude-sonnet-4-5-20250929" ;;
+    esac
+
+    cat > "$SCRIPT_DIR/server/.env" << EOF
+ANTHROPIC_API_KEY=${API_KEY}
+ELEVENLABS_API_KEY=${ELEVENLABS_KEY}
 PORT=3001
-CLAUDE_MODEL=claude-sonnet-4-5-20250929
-BUDDY_ENV=development
+CLAUDE_MODEL=${CLAUDE_MODEL}
+BUDDY_ENV=production
 EOF
 
-    ok "API key saved to server/.env"
+    ok "Configuration saved to server/.env (model: ${CLAUDE_MODEL})"
 fi
 
-# ─── Step 7: Install npm dependencies ────────────────────────
+# ─── Step 5: Install npm dependencies ───────────────────────
 
 step "Installing npm dependencies..."
 
-run_logged "Installing server and client dependencies" npm run install:all || \
+run_logged "Installing server and client dependencies" npm --prefix "$SCRIPT_DIR" run install:all || \
     die "Failed to install dependencies." \
         "Check the log file and make sure you have internet access."
 
-# ─── Step 8: Build frontend ─────────────────────────────────
+# ─── Step 6: Build frontend ─────────────────────────────────
 
 step "Building the frontend..."
 
-run_logged "Building client" npm run build || \
+run_logged "Building client" npm --prefix "$SCRIPT_DIR" run build || \
     die "Failed to build the frontend." \
         "Check the log file for errors."
 
-# ─── Step 9: Start Docker sandbox ────────────────────────────
+# ─── Step 7: Create admin account ────────────────────────────
 
-step "Setting up Docker sandbox..."
+step "Creating admin account..."
 
-if [ "$DOCKER_AVAILABLE" = true ]; then
-    info "This may take a few minutes (building the container image)..."
-    # Use sg if Docker was just installed on Linux (group not yet active in this shell)
-    DOCKER_CMD="docker compose up -d --build"
-    if [ "$DOCKER_JUST_INSTALLED" = true ] && [ "$OS" = "linux" ]; then
-        run_logged "Building and starting sandbox container" sg docker -c "$DOCKER_CMD" || \
-            warn "Failed to start sandbox. You can retry after logging out and back in."
-    else
-        run_logged "Building and starting sandbox container" $DOCKER_CMD || \
-            warn "Failed to start sandbox. Check Docker and retry."
+# Start server in background
+(cd "$SCRIPT_DIR/server" && NODE_ENV=production node index.js) &
+SERVER_PID=$!
+
+# Wait up to 30 seconds for server to be ready
+info "Waiting for server to start..."
+SERVER_READY=false
+for _ in $(seq 1 30); do
+    if curl -s http://localhost:3001/api/health >/dev/null 2>&1; then
+        SERVER_READY=true
+        break
     fi
+    sleep 1
+done
 
-    # Seed workspace.json if first run
-    SEED_CMD="docker exec buddy-sandbox sh -c 'test -f /agent/knowledge/workspace.json || cat > /agent/knowledge/workspace.json << WSJSON
-{
-  \"version\": 1,
-  \"description\": \"Agent self-managed index of the workspace\",
-  \"folders\": {},
-  \"notes\": []
-}
-WSJSON'"
-
-    if [ "$DOCKER_JUST_INSTALLED" = true ] && [ "$OS" = "linux" ]; then
-        sg docker -c "$SEED_CMD" >> "$LOG_FILE" 2>&1 || true
-    else
-        eval "$SEED_CMD" >> "$LOG_FILE" 2>&1 || true
-    fi
-
-    ok "Docker sandbox running"
-else
-    warn "Docker not available — skipping sandbox setup."
-    info "Buddy will work, but sandbox features will be disabled."
-    info "Install/start Docker and re-run this script to enable sandbox."
+if [ "$SERVER_READY" = false ]; then
+    die "Server did not start within 30 seconds." \
+        "Check the log or try: cd server && node index.js"
 fi
 
-# ─── Step 10: Install pm2 + start server ─────────────────────
+ok "Server started"
+
+# Check if users already exist
+REGISTER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3001/api/auth/register \
+    -H "Content-Type: application/json" -d '{}')
+
+if [ "$REGISTER_STATUS" = "403" ]; then
+    ok "Admin account already exists — skipping."
+elif [ "$REGISTER_STATUS" = "400" ]; then
+    # No users yet, create the first admin
+    info "No users found. Let's create the admin account."
+    echo ""
+
+    # Username
+    while true; do
+        read -r -p "  Username (lowercase, alphanumeric): " ADMIN_USERNAME
+        if [ -z "$ADMIN_USERNAME" ]; then
+            warn "Username cannot be empty."
+        elif [[ "$ADMIN_USERNAME" =~ ^[a-z0-9_-]+$ ]]; then
+            break
+        else
+            warn "Username must be lowercase letters, numbers, hyphens, or underscores."
+        fi
+    done
+
+    # Display name
+    ADMIN_DISPLAY=""
+    while true; do
+        read -r -p "  Display name: " ADMIN_DISPLAY
+        if [ -n "$ADMIN_DISPLAY" ]; then
+            break
+        fi
+        warn "Display name cannot be empty."
+    done
+
+    # Password
+    while true; do
+        read_password "Password (min 4 chars)" ADMIN_PASS
+        if [ ${#ADMIN_PASS} -lt 4 ]; then
+            warn "Password must be at least 4 characters."
+            continue
+        fi
+        read_password "Confirm password" ADMIN_PASS_CONFIRM
+        if [ "$ADMIN_PASS" != "$ADMIN_PASS_CONFIRM" ]; then
+            warn "Passwords do not match. Try again."
+            continue
+        fi
+        break
+    done
+
+    # Build JSON body safely — username is validated alphanumeric,
+    # but password and display name can contain special characters.
+    if command -v python3 &>/dev/null; then
+        JSON_PASS=$(printf '%s' "$ADMIN_PASS" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+        JSON_DISPLAY=$(printf '%s' "$ADMIN_DISPLAY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+    else
+        # Fallback: escape backslashes and double quotes manually
+        ESCAPED_PASS=$(printf '%s' "$ADMIN_PASS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        JSON_PASS="\"${ESCAPED_PASS}\""
+        ESCAPED_DISPLAY=$(printf '%s' "$ADMIN_DISPLAY" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        JSON_DISPLAY="\"${ESCAPED_DISPLAY}\""
+    fi
+
+    JSON_BODY="{\"username\":\"${ADMIN_USERNAME}\",\"password\":${JSON_PASS},\"displayName\":${JSON_DISPLAY}}"
+
+    REGISTER_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:3001/api/auth/register \
+        -H "Content-Type: application/json" \
+        -d "$JSON_BODY")
+
+    REGISTER_CODE=$(echo "$REGISTER_RESPONSE" | tail -n 1)
+    REGISTER_BODY=$(echo "$REGISTER_RESPONSE" | sed '$d')
+
+    case "$REGISTER_CODE" in
+        201)
+            ok "Admin account '${ADMIN_USERNAME}' created successfully!"
+            ;;
+        409)
+            warn "Username '${ADMIN_USERNAME}' is already taken."
+            ;;
+        *)
+            warn "Unexpected response (HTTP ${REGISTER_CODE}). You may need to create an account manually."
+            echo "  Response: ${REGISTER_BODY}" >> "$LOG_FILE"
+            ;;
+    esac
+else
+    warn "Unexpected response from server (HTTP ${REGISTER_STATUS}). Skipping account creation."
+    info "You can create an account by visiting http://localhost:3001 after setup."
+fi
+
+# Stop temp server
+if [ -n "$SERVER_PID" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+    SERVER_PID=""
+fi
+
+info "Temporary server stopped."
+
+# ─── Step 8: Tailscale setup (optional) ──────────────────────
+
+step "Remote access via Tailscale..."
+
+echo ""
+echo "  Tailscale lets you securely access Buddy from your phone, laptop,"
+echo "  or any device — anywhere in the world — without opening ports or"
+echo "  configuring your router. It creates a private network between your"
+echo "  devices using WireGuard."
+echo ""
+
+if ask_yn "Set up Tailscale for remote access?"; then
+    # Check if installed
+    if ! command -v tailscale &>/dev/null; then
+        info "Tailscale is not installed."
+        if ask_yn "Install Tailscale now?"; then
+            if [ "$OS" = "linux" ]; then
+                run_logged "Installing Tailscale" bash -c "curl -fsSL https://tailscale.com/install.sh | sh" || \
+                    die "Failed to install Tailscale." "Try installing manually: https://tailscale.com/download"
+            elif [ "$OS" = "mac" ]; then
+                if command -v brew &>/dev/null; then
+                    run_logged "Installing Tailscale via Homebrew" brew install tailscale || \
+                        die "Failed to install Tailscale." "Try installing manually: https://tailscale.com/download"
+                else
+                    warn "Cannot install Tailscale without Homebrew."
+                    info "Install manually: https://tailscale.com/download"
+                fi
+            fi
+        else
+            info "Skipping Tailscale installation."
+        fi
+    fi
+
+    # If tailscale is now available, check connection
+    if command -v tailscale &>/dev/null; then
+        TS_STATUS=$(tailscale status 2>&1 || true)
+        if echo "$TS_STATUS" | grep -qiE "stopped|not logged in|NeedsLogin"; then
+            info "Tailscale is not connected. Running 'sudo tailscale up'..."
+            info "Follow the URL printed below to authenticate."
+            echo ""
+            sudo tailscale up
+            echo ""
+        fi
+
+        # Try to get IP
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+        if [ -n "$TAILSCALE_IP" ]; then
+            ok "Tailscale connected! IP: ${BOLD}${TAILSCALE_IP}${RESET}"
+        else
+            warn "Could not get Tailscale IP. Check 'tailscale status' after setup."
+        fi
+    fi
+else
+    info "Skipping Tailscale. You can set it up later: https://tailscale.com/download"
+fi
+
+# ─── Step 9: pm2 + start ────────────────────────────────────
 
 step "Starting Buddy with pm2..."
 
-if ! command -v pm2 &> /dev/null; then
+if ! command -v pm2 &>/dev/null; then
     info "Installing pm2 (process manager)..."
-    run_logged "Installing pm2 globally" npm install -g pm2 || \
+    run_logged "Installing pm2 globally" sudo npm install -g pm2 || \
         die "Failed to install pm2." \
             "Try running: sudo npm install -g pm2"
 fi
@@ -460,13 +556,29 @@ fi
 # Stop existing instance if running
 pm2 delete buddy-server >> "$LOG_FILE" 2>&1 || true
 
-run_logged "Starting Buddy server" pm2 start ecosystem.config.cjs || \
+run_logged "Starting Buddy server" pm2 start "$SCRIPT_DIR/ecosystem.config.cjs" || \
     die "Failed to start the server." \
         "Try running manually: cd server && node index.js"
 
 pm2 save >> "$LOG_FILE" 2>&1 || true
 
 ok "Buddy is running!"
+
+# Offer auto-start on boot
+echo ""
+if ask_yn "Start Buddy automatically on system boot?"; then
+    info "Setting up pm2 startup..."
+    STARTUP_CMD=$(pm2 startup 2>&1 | grep -E "^\s*sudo " || true)
+    if [ -n "$STARTUP_CMD" ]; then
+        info "Running: ${STARTUP_CMD}"
+        eval "$STARTUP_CMD" >> "$LOG_FILE" 2>&1 || warn "Auto-start setup failed. Run 'pm2 startup' manually."
+        ok "Auto-start configured!"
+    else
+        # pm2 startup might not need sudo (already root, or already configured)
+        pm2 startup >> "$LOG_FILE" 2>&1 || true
+        ok "Auto-start configured!"
+    fi
+fi
 
 # ─── Done ────────────────────────────────────────────────────
 
@@ -475,32 +587,35 @@ echo "${BOLD}=========================================${RESET}"
 echo "${GREEN}${BOLD}  Setup Complete!${RESET}"
 echo "${BOLD}=========================================${RESET}"
 echo ""
-echo "  Buddy is running at: ${BOLD}http://localhost:3001${RESET}"
+echo "  ${BOLD}Buddy is running at:${RESET}"
 echo ""
-echo "  Open that URL in a browser to start talking to Buddy."
+echo "    Local:      ${BOLD}http://localhost:3001${RESET}"
+
+if [ -n "$TAILSCALE_IP" ]; then
+    echo "    Tailscale:  ${BOLD}http://${TAILSCALE_IP}:3001${RESET}"
+fi
+
 echo ""
-echo "  ${BOLD}Next steps:${RESET}"
+
+if [ -n "$ADMIN_USERNAME" ]; then
+    echo "  ${BOLD}Admin account:${RESET} ${ADMIN_USERNAME}"
+    echo ""
+fi
+
+echo "  Open the URL above in a browser to start talking to Buddy."
 echo ""
-echo "  1. ${CYAN}Access from your phone/other devices:${RESET}"
-echo "     a) Install Tailscale on this machine: https://tailscale.com/download"
-echo "        Then run: ${BOLD}sudo tailscale up${RESET}"
-echo "     b) Install Tailscale on your phone/laptop/tablet (same link)"
-echo "        Sign in with the ${BOLD}same account${RESET} on both devices."
-echo "     c) Find this machine's Tailscale address: ${BOLD}tailscale status${RESET}"
-echo "        Open ${BOLD}http://<tailscale-address>:3001${RESET} on your other device."
-echo ""
-echo "  2. ${CYAN}Auto-start on reboot:${RESET}"
-echo "     Run: ${BOLD}pm2 startup${RESET}"
-echo "     Then copy and run the command it gives you."
-echo ""
+
+if [ -n "$TAILSCALE_IP" ]; then
+    echo "  ${BOLD}Accessing from other devices:${RESET}"
+    echo "    1. Install Tailscale on your phone/laptop: https://tailscale.com/download"
+    echo "    2. Sign in with the same account you used above"
+    echo "    3. Open ${BOLD}http://${TAILSCALE_IP}:3001${RESET} on that device"
+    echo ""
+fi
+
 echo "  ${BOLD}Useful commands:${RESET}"
 echo "    pm2 status          — check if Buddy is running"
 echo "    pm2 logs            — see server logs"
 echo "    pm2 restart all     — restart the server"
 echo "    pm2 stop all        — stop the server"
 echo ""
-if [ "$DOCKER_AVAILABLE" != true ]; then
-    echo "  ${YELLOW}Note:${RESET} Docker sandbox was not set up."
-    echo "  Install Docker and re-run ${BOLD}bash setup.sh${RESET} to enable it."
-    echo ""
-fi
