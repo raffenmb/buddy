@@ -48,6 +48,12 @@ export default function useWebSocket() {
       });
 
       ws.addEventListener("message", (event) => {
+        // Binary frame — audio chunk from ElevenLabs TTS
+        if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+          window.dispatchEvent(new CustomEvent("buddy-tts-chunk", { detail: event.data }));
+          return;
+        }
+
         try {
           const data = JSON.parse(event.data);
 
@@ -69,6 +75,15 @@ export default function useWebSocket() {
               break;
             case "canvas_rehydrate":
               dispatch({ type: "CANVAS_REHYDRATE", payload: { elements: data.elements } });
+              break;
+            case "tts_start":
+              window.dispatchEvent(new CustomEvent("buddy-tts-start", { detail: data }));
+              break;
+            case "tts_end":
+              window.dispatchEvent(new CustomEvent("buddy-tts-end"));
+              break;
+            case "tts_fallback":
+              window.dispatchEvent(new CustomEvent("buddy-tts-fallback"));
               break;
             default:
               break;
