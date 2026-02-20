@@ -206,7 +206,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 ## Key Client Modules
 
 - `client/src/context/BuddyState.jsx` — Global state (useReducer): avatar, subtitle, canvas, input, connection, admin stack nav. Includes element ID deduplication and shared wsRef.
-- `client/src/components/TopBar.jsx` — Agent name, connection dot, theme toggle, admin gear button
+- `client/src/components/TopBar.jsx` — Agent name, connection dot, theme toggle, gear button (visible to all users, not just admins)
 - `client/src/components/Avatar.jsx` — Bottom-left, two-frame mouth toggle (150ms interval), JS-driven bob animation (requestAnimationFrame), subtitle display, browser TTS
 - `client/src/components/Canvas.jsx` — Scrollable region with modes: ambient, content, media, clear. 5 flexbox-only layouts.
 - `client/src/components/InputBar.jsx` — Pill-shaped input with circular send button
@@ -215,7 +215,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
 - `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types (including `canvas_show_confirmation`)
 - `client/src/components/canvas-elements/` — 8 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), ImageDisplay, Notification, **ActionConfirm** (interactive destructive command confirmation)
-- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList, AgentEditor (button picker model selector), ToolSelector (toggle switches for installed skills only)
+- `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList (personal + shared agent creation), AgentEditor (button picker model selector, leave/delete for shared agents), ToolSelector (toggle switches for installed skills only). All users see AgentList; only admins see UserList.
 
 ## Environment
 
