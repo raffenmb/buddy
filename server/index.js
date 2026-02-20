@@ -69,6 +69,15 @@ function broadcastToUser(userId, data) {
   }
 }
 
+function parseVoiceConfig(raw) {
+  if (!raw) return {};
+  try {
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return {};
+  }
+}
+
 function isUserOnline(userId) {
   for (const [ws, conn] of wsConnections) {
     if (conn.userId === userId && ws.readyState === 1) return true;
@@ -537,15 +546,7 @@ app.post("/api/prompt", (req, res) => {
       });
 
       // Get voice config for TTS
-      const agentData = getAgent(agentId);
-      let voiceConfig = {};
-      if (agentData && agentData.voice_config) {
-        try {
-          voiceConfig = typeof agentData.voice_config === "string"
-            ? JSON.parse(agentData.voice_config)
-            : agentData.voice_config;
-        } catch {}
-      }
+      const voiceConfig = parseVoiceConfig(agent?.voice_config);
 
       // Split canvas commands and subtitle, broadcast in order
       splitAndBroadcast(result.allToolCalls, result.finalTextContent, send, {
@@ -572,20 +573,27 @@ app.post("/api/prompt", (req, res) => {
 
           sendTo(targetWs, { type: "tts_start", format: "mp3" });
 
+          let streamSuccess = false;
           try {
             const reader = audioStream.getReader();
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
-              if (targetWs.readyState === 1) {
-                targetWs.send(value);
+              if (done) { streamSuccess = true; break; }
+              if (targetWs.readyState !== 1) {
+                reader.cancel("client disconnected");
+                return;
               }
+              targetWs.send(value);
             }
           } catch (err) {
             console.error("[tts] Stream error:", err.message);
           }
 
-          sendTo(targetWs, { type: "tts_end" });
+          if (streamSuccess) {
+            sendTo(targetWs, { type: "tts_end" });
+          } else {
+            sendTo(targetWs, { type: "tts_fallback" });
+          }
         },
       });
     } catch (error) {
@@ -710,15 +718,7 @@ wss.on("connection", (ws, req) => {
             requestConfirmation: (command, reason) => requestConfirmationForClient(ws, command, reason),
             requestForm: (params) => requestFormForClient(ws, params),
           });
-          const uploadAgentData = getAgent(agentId);
-          let uploadVoiceConfig = {};
-          if (uploadAgentData && uploadAgentData.voice_config) {
-            try {
-              uploadVoiceConfig = typeof uploadAgentData.voice_config === "string"
-                ? JSON.parse(uploadAgentData.voice_config)
-                : uploadAgentData.voice_config;
-            } catch {}
-          }
+          const uploadVoiceConfig = parseVoiceConfig(getAgent(agentId)?.voice_config);
 
           splitAndBroadcast(result.allToolCalls, result.finalTextContent, (d) => sendTo(ws, d), {
             onSubtitle: async (text) => {
@@ -734,17 +734,28 @@ wss.on("connection", (ws, req) => {
               }
 
               sendTo(ws, { type: "tts_start", format: "mp3" });
+
+              let streamSuccess = false;
               try {
                 const reader = audioStream.getReader();
                 while (true) {
                   const { done, value } = await reader.read();
-                  if (done) break;
-                  if (ws.readyState === 1) ws.send(value);
+                  if (done) { streamSuccess = true; break; }
+                  if (ws.readyState !== 1) {
+                    reader.cancel("client disconnected");
+                    return;
+                  }
+                  ws.send(value);
                 }
               } catch (err) {
                 console.error("[tts] Stream error:", err.message);
               }
-              sendTo(ws, { type: "tts_end" });
+
+              if (streamSuccess) {
+                sendTo(ws, { type: "tts_end" });
+              } else {
+                sendTo(ws, { type: "tts_fallback" });
+              }
             },
           });
         } catch (err) {

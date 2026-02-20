@@ -39,6 +39,9 @@ export function splitAndBroadcast(allToolCalls, finalTextContent, broadcast, opt
     });
 
     // 3. Trigger TTS if callback provided
+    // Fire-and-forget: TTS streams audio in background while processing completes.
+    // processing:false is sent immediately — audio may still be playing when the
+    // client receives it. This is intentional: the UI becomes interactive right away.
     if (options.onSubtitle) {
       options.onSubtitle(finalTextContent).catch((err) => {
         console.error("[splitter] TTS callback error:", err);
