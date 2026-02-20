@@ -152,8 +152,8 @@ export function applyCanvasCommand(userId, commandName, params) {
       elements.push({ type: "media", ...params });
       break;
     case "canvas_show_confirmation":
-      elements.push({ type: "confirmation", ...params });
-      break;
+      // Confirmations are ephemeral (60s timeout) — don't persist
+      return;
     case "canvas_update_card": {
       const idx = elements.findIndex(el => el.id === params.id);
       if (idx !== -1) elements[idx] = { ...elements[idx], ...params };

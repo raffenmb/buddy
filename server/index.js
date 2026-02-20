@@ -573,7 +573,6 @@ wss.on("connection", (ws, req) => {
         chart: "canvas_show_chart",
         table: "canvas_show_table",
         media: "canvas_play_media",
-        confirmation: "canvas_show_confirmation",
       };
       const command = commandMap[elType];
       if (command) {
