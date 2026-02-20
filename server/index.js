@@ -17,7 +17,7 @@ import { splitAndBroadcast } from "./response-splitter.js";
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent, attachUserToSharedAgents } from "./agents.js";
 import db from "./db.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
-import { resetSession } from "./session.js";
+import { resetSession, getCanvasState, applyCanvasCommand } from "./session.js";
 import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
@@ -458,11 +458,14 @@ app.post("/api/prompt", (req, res) => {
       // Agent switch notification
       const agent = getAgent(agentId);
       if (agent) {
+        // Clear canvas (both broadcast and server state)
         send({
           type: "canvas_command",
           command: "canvas_set_mode",
           params: { mode: "clear" },
         });
+        applyCanvasCommand(userId, "canvas_set_mode", { mode: "clear" });
+
         send({
           type: "agent_switch",
           agent: {
@@ -552,6 +555,31 @@ wss.on("connection", (ws, req) => {
       sendTo(ws, msg);
     }
     console.log(`[scheduler] Delivered ${pending.length} pending messages to ${decoded.username}`);
+  }
+
+  // Send last-known canvas state to rehydrate the frontend
+  const initialCanvas = getCanvasState(decoded.userId);
+  if (initialCanvas.length > 0) {
+    sendTo(ws, {
+      type: "canvas_command",
+      command: "canvas_set_mode",
+      params: { mode: "content" },
+    });
+    for (const el of initialCanvas) {
+      const { type: elType, ...params } = el;
+      const commandMap = {
+        card: "canvas_add_card",
+        text: "canvas_show_text",
+        chart: "canvas_show_chart",
+        table: "canvas_show_table",
+        media: "canvas_play_media",
+        confirmation: "canvas_show_confirmation",
+      };
+      const command = commandMap[elType];
+      if (command) {
+        sendTo(ws, { type: "canvas_command", command, params });
+      }
+    }
   }
 
   ws.on("message", async (data, isBinary) => {

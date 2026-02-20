@@ -101,7 +101,7 @@ function buildSystemPrompt(agent, memories, userId) {
     if (canvasElements.length > 0) {
       basePrompt += "\n\n## What's currently on the canvas\nThe user can see the following elements on their screen right now:";
       for (const el of canvasElements) {
-        const summary = el.title || el.content || el.body || "";
+        const summary = el.title || el.content || el.body || el.url || "";
         const truncated = summary.length > 150 ? summary.slice(0, 150) + "..." : summary;
         basePrompt += `\n- [${el.type}] id="${el.id}"${truncated ? `: ${truncated}` : ""}`;
       }
