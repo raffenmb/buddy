@@ -136,21 +136,40 @@ export function getAgent(id) {
 }
 
 export function listAgents(userId) {
-  return db.prepare(
-    "SELECT id, name, model, avatar, enabled_tools, avatar_config, voice_config, user_id FROM agents WHERE user_id = ? OR user_id IS NULL"
-  ).all(userId);
+  return db.prepare(`
+    SELECT a.id, a.name, a.model, a.avatar, a.enabled_tools, a.avatar_config, a.voice_config, a.user_id, a.is_shared,
+      CASE WHEN a.is_shared = 1
+        THEN (SELECT COUNT(*) FROM agent_users WHERE agent_id = a.id)
+        ELSE NULL
+      END AS userCount
+    FROM agents a
+    WHERE (a.is_shared = 0 AND a.user_id = ?)
+       OR (a.is_shared = 1 AND a.id IN (SELECT agent_id FROM agent_users WHERE user_id = ?))
+  `).all(userId, userId);
 }
 
-export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info, userId }) {
+export function createAgent({ id, name, model, system_prompt, avatar_config, voice_config, identity, user_info, userId, shared }) {
   const m = model || defaultModel;
   const sp = system_prompt || DEFAULT_PERSONALITY;
   const av = avatar_config ? JSON.stringify(avatar_config) : "{}";
   const vc = voice_config ? JSON.stringify(voice_config) : "{}";
+  const isShared = shared ? 1 : 0;
 
   db.prepare(`
-    INSERT INTO agents (id, name, model, system_prompt, avatar_config, voice_config, user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, m, sp, av, vc, userId || null);
+    INSERT INTO agents (id, name, model, system_prompt, avatar_config, voice_config, user_id, is_shared)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, m, sp, av, vc, isShared ? null : (userId || null), isShared);
+
+  if (isShared) {
+    const allUsers = db.prepare("SELECT id FROM users").all();
+    const insert = db.prepare("INSERT OR IGNORE INTO agent_users (agent_id, user_id) VALUES (?, ?)");
+    const seed = db.transaction(() => {
+      for (const user of allUsers) {
+        insert.run(id, user.id);
+      }
+    });
+    seed();
+  }
 
   // Create folder + core files (identity.md holds personality only)
   const dir = ensureAgentDir(id);
@@ -192,16 +211,35 @@ export function deleteAgent(id, userId) {
   }
   const agent = getAgent(id);
   if (!agent) throw new Error("Agent not found");
-  if (agent.user_id && agent.user_id !== userId) {
-    throw new Error("Cannot delete another user's agent");
-  }
-  db.prepare("DELETE FROM agents WHERE id = ?").run(id);
 
-  // Remove agent folder
+  if (agent.is_shared) {
+    // Remove this user from the shared agent
+    db.prepare("DELETE FROM agent_users WHERE agent_id = ? AND user_id = ?").run(id, userId);
+
+    // Clean up user's schedules and pending messages for this agent
+    db.prepare("DELETE FROM schedules WHERE agent_id = ? AND user_id = ?").run(id, userId);
+    db.prepare("DELETE FROM pending_messages WHERE agent_id = ? AND user_id = ?").run(id, userId);
+
+    // Check if anyone is left
+    const remaining = db.prepare("SELECT COUNT(*) AS cnt FROM agent_users WHERE agent_id = ?").get(id);
+    if (remaining.cnt > 0) {
+      return { detached: true }; // Other users still have it
+    }
+    // Last user — fall through to full delete
+  } else {
+    // Private agent — only owner can delete
+    if (agent.user_id && agent.user_id !== userId) {
+      throw new Error("Cannot delete another user's agent");
+    }
+  }
+
+  // Full delete (private agent, or last user on shared agent)
+  db.prepare("DELETE FROM agents WHERE id = ?").run(id);
   const dir = join(AGENTS_DIR, id);
   if (existsSync(dir)) {
     rmSync(dir, { recursive: true, force: true });
   }
+  return { deleted: true };
 }
 
 // ─── Access Control ──────────────────────────────────────────────────────────
@@ -209,8 +247,21 @@ export function deleteAgent(id, userId) {
 export function canAccessAgent(agentId, userId) {
   const agent = getAgent(agentId);
   if (!agent) return false;
-  if (!agent.user_id) return true; // Shared agent
+  if (agent.is_shared) {
+    return !!db.prepare("SELECT 1 FROM agent_users WHERE agent_id = ? AND user_id = ?").get(agentId, userId);
+  }
   return agent.user_id === userId;
+}
+
+export function attachUserToSharedAgents(userId) {
+  const sharedAgents = db.prepare("SELECT id FROM agents WHERE is_shared = 1").all();
+  const insert = db.prepare("INSERT OR IGNORE INTO agent_users (agent_id, user_id) VALUES (?, ?)");
+  const attach = db.transaction(() => {
+    for (const agent of sharedAgents) {
+      insert.run(agent.id, userId);
+    }
+  });
+  attach();
 }
 
 // ─── Agent Files ─────────────────────────────────────────────────────────────
