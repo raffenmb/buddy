@@ -21,7 +21,7 @@ Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on
 - **Frontend:** React 18 with Vite, Tailwind CSS 4, Victory (charts)
 - **Database:** SQLite via `better-sqlite3` at `~/.buddy/buddy.db`
 - **State:** React Context + useReducer (command/reducer pattern)
-- **TTS:** Browser Speech API (to be replaced with ElevenLabs/OpenAI later)
+- **TTS:** ElevenLabs API (server-side streaming via WebSocket) with browser Speech API fallback
 - **Theme:** Light mode default with dark mode toggle (Figtree font, pastel/soft design system)
 - **No TypeScript** — vanilla JS (.jsx/.js files)
 
@@ -206,6 +206,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/shell/summarizer.js` — Haiku-based output summarization for long command output, log file storage
 - `server/subagent/spawner.js` — Sub-agent template CRUD + `spawnSubAgent()` (calls Agent SDK `query()`, returns result)
 - `server/scheduler.js` — In-process scheduler: 30s polling loop, schedule CRUD, processPrompt trigger, offline message queuing and delivery
+- `server/tts.js` — ElevenLabs TTS service: availability check, voice listing, streaming speech. Calls ElevenLabs HTTP streaming endpoint, returns readable stream of MP3 chunks. Auto-disables for 5 minutes on auth failure.
 
 ## Key Client Modules
 
@@ -217,6 +218,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `client/src/hooks/useWebSocket.js` — WS connection, message routing, reconnect with exponential backoff. Uses shared wsRef from context.
 - `client/src/hooks/useTheme.jsx` — ThemeProvider + useTheme hook, dark mode toggle, persists to localStorage
 - `client/src/hooks/useEntryAnimation.js` — CSS transition entry animations (replaces @keyframes)
+- `client/src/hooks/useAudioPlayer.js` — Audio playback hook: listens for TTS WebSocket events (tts_start, binary chunks, tts_end, tts_fallback), accumulates MP3 chunks, decodes via AudioContext, plays. Falls back to browser speechSynthesis. Cancels on new input.
 - `client/src/lib/commandRouter.js` — Maps canvas command names to reducer action types (including `canvas_show_confirmation`)
 - `client/src/components/canvas-elements/` — 11 components: Card, Chart (Victory), DataTable (flex rows), TextBlock, VideoPlayer (YouTube embed), Notification, **ActionConfirm** (interactive destructive command confirmation), ProgressBar, Timer, **Checklist** (interactive, syncs via WebSocket), **FormInput** (interactive, blocks tool loop like ActionConfirm)
 - `client/src/components/admin/` — Stack-nav admin: AdminDashboard, AgentList (personal + shared agent creation), AgentEditor (button picker model selector, leave/delete for shared agents), ToolSelector (toggle switches for installed skills only). All users see AgentList; only admins see UserList.
@@ -275,7 +277,8 @@ BUDDY_ENV=development
 
 **Known web-only divergences (documented, acceptable):**
 - `<iframe>` for YouTube embeds — will use `react-native-youtube-iframe` on mobile
-- `window.speechSynthesis` — will use `expo-speech` on mobile
+- `window.speechSynthesis` (native fallback) — will use `expo-speech` on mobile
+- `AudioContext.decodeAudioData` (ElevenLabs playback) — will use `expo-av` on mobile
 - Vite proxy for `/api` — mobile will connect directly to server URL
 - Google Fonts `<link>` — mobile will use `expo-font`
 - Skill folder upload (drag-drop, directory picker, `webkitdirectory`) — **desktop-only feature**. Users won't build/share skill folders from a phone.
