@@ -124,6 +124,19 @@ export default function AgentEditor({ agentId, onDeleted }) {
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
+      {agent.is_shared === 1 && (
+        <div
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm"
+          style={{
+            backgroundColor: "var(--color-bg-raised)",
+            color: "var(--color-text-muted)",
+            border: "1px solid var(--color-border)",
+          }}
+        >
+          Shared with {agent.userCount || 1} {agent.userCount === 1 ? "user" : "users"} — changes affect everyone
+        </div>
+      )}
+
       {/* Name */}
       <div>
         <label
