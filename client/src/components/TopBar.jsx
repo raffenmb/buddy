@@ -196,8 +196,8 @@ export default function TopBar() {
           )}
         </button>
 
-        {/* Admin gear — only for admins */}
-        {user?.isAdmin && (
+        {/* Gear — agent management for all users, user management for admins */}
+        {user && (
           <button
             onClick={openAdmin}
             className="p-2 rounded-xl transition-colors"
