@@ -459,15 +459,10 @@ app.post("/api/prompt", (req, res) => {
         }
       }
 
+      // Only send agent switch + canvas rehydration when the agent actually changes
+      // (skip null→agentId on first prompt — WS connect already handled rehydration)
       const agent = getAgent(agentId);
-      if (agent && previousAgentId !== agentId) {
-        // Agent actually changed — clear frontend canvas and load new agent's canvas
-        send({
-          type: "canvas_command",
-          command: "canvas_set_mode",
-          params: { mode: "clear" },
-        });
-
+      if (agent && previousAgentId && previousAgentId !== agentId) {
         send({
           type: "agent_switch",
           agent: {
@@ -479,29 +474,9 @@ app.post("/api/prompt", (req, res) => {
           },
         });
 
-        // Rehydrate new agent's canvas
+        // Atomically rehydrate the new agent's canvas (single message, single dispatch)
         const newCanvas = getCanvasState(userId, agentId);
-        if (newCanvas.length > 0) {
-          send({
-            type: "canvas_command",
-            command: "canvas_set_mode",
-            params: { mode: "content" },
-          });
-          const commandMap = {
-            card: "canvas_add_card",
-            text: "canvas_show_text",
-            chart: "canvas_show_chart",
-            table: "canvas_show_table",
-            media: "canvas_play_media",
-          };
-          for (const el of newCanvas) {
-            const { type: elType, ...params } = el;
-            const command = commandMap[elType];
-            if (command) {
-              send({ type: "canvas_command", command, params });
-            }
-          }
-        }
+        send({ type: "canvas_rehydrate", elements: newCanvas });
       }
 
       // Find a WS for confirmation callbacks
@@ -583,28 +558,10 @@ wss.on("connection", (ws, req) => {
     console.log(`[scheduler] Delivered ${pending.length} pending messages to ${decoded.username}`);
   }
 
-  // Send last-known canvas state to rehydrate the frontend (default agent)
+  // Rehydrate canvas state for default agent (atomic single message)
   const initialCanvas = getCanvasState(decoded.userId, "buddy");
   if (initialCanvas.length > 0) {
-    sendTo(ws, {
-      type: "canvas_command",
-      command: "canvas_set_mode",
-      params: { mode: "content" },
-    });
-    for (const el of initialCanvas) {
-      const { type: elType, ...params } = el;
-      const commandMap = {
-        card: "canvas_add_card",
-        text: "canvas_show_text",
-        chart: "canvas_show_chart",
-        table: "canvas_show_table",
-        media: "canvas_play_media",
-      };
-      const command = commandMap[elType];
-      if (command) {
-        sendTo(ws, { type: "canvas_command", command, params });
-      }
-    }
+    sendTo(ws, { type: "canvas_rehydrate", elements: initialCanvas });
   }
 
   ws.on("message", async (data, isBinary) => {

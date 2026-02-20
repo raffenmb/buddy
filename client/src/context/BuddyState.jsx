@@ -137,6 +137,16 @@ function buddyReducer(state, action) {
     case "CANVAS_SHOW_CONFIRMATION":
       return addElement(state, "confirmation", action.payload);
 
+    case "CANVAS_REHYDRATE":
+      return {
+        ...state,
+        canvas: {
+          ...state.canvas,
+          mode: action.payload.elements.length > 0 ? "content" : "ambient",
+          elements: action.payload.elements
+        }
+      };
+
     case "SET_PROCESSING":
       return {
         ...state,
