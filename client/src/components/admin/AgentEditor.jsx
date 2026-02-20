@@ -23,11 +23,29 @@ export default function AgentEditor({ agentId, onDeleted }) {
   const [avatar, setAvatar] = useState("buddy");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [voiceProvider, setVoiceProvider] = useState("native");
+  const [voiceId, setVoiceId] = useState("");
+  const [voiceModelId, setVoiceModelId] = useState("eleven_flash_v2_5");
+  const [voices, setVoices] = useState([]);
+  const [ttsAvailable, setTtsAvailable] = useState(false);
+  const [playingPreview, setPlayingPreview] = useState(null);
 
   useEffect(() => {
     if (!agentId) return;
     loadAgent();
   }, [agentId]);
+
+  useEffect(() => {
+    apiFetch("/api/tts/voices")
+      .then((v) => {
+        setVoices(v);
+        setTtsAvailable(v.length > 0);
+      })
+      .catch(() => {
+        setVoices([]);
+        setTtsAvailable(false);
+      });
+  }, []);
 
   async function loadAgent() {
     try {
@@ -40,6 +58,19 @@ export default function AgentEditor({ agentId, onDeleted }) {
       setName(agentData.name);
       setModel(agentData.model);
       setAvatar(agentData.avatar || "buddy");
+      // Parse voice config
+      if (agentData.voice_config) {
+        try {
+          const vc = typeof agentData.voice_config === "string"
+            ? JSON.parse(agentData.voice_config)
+            : agentData.voice_config;
+          if (vc.voiceId) {
+            setVoiceProvider("elevenlabs");
+            setVoiceId(vc.voiceId);
+            setVoiceModelId(vc.modelId || "eleven_flash_v2_5");
+          }
+        } catch {}
+      }
       setIdentity(identityData.content || "");
       setUserInfo(userInfoData.content || "");
 
@@ -67,7 +98,12 @@ export default function AgentEditor({ agentId, onDeleted }) {
       await Promise.all([
         apiFetch(`/api/agents/${agentId}`, {
           method: "PUT",
-          body: { name, model, avatar, enabled_tools: enabledTools },
+          body: {
+            name, model, avatar, enabled_tools: enabledTools,
+            voice_config: voiceProvider === "elevenlabs" && voiceId
+              ? { provider: "elevenlabs", voiceId, modelId: voiceModelId }
+              : {},
+          },
         }),
         apiFetch(`/api/agents/${agentId}/files/identity.md`, {
           method: "PUT",
@@ -190,6 +226,208 @@ export default function AgentEditor({ agentId, onDeleted }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Voice */}
+      <div>
+        <label
+          className="block text-sm font-medium mb-2"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Voice
+        </label>
+        {/* TTS Provider toggle */}
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            onClick={() => setVoiceProvider("native")}
+            className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: voiceProvider === "native"
+                ? "var(--color-accent)"
+                : "var(--color-bg-raised)",
+              color: voiceProvider === "native"
+                ? "#FFFFFF"
+                : "var(--color-text-secondary)",
+              border: voiceProvider === "native"
+                ? "1px solid var(--color-accent)"
+                : "1px solid var(--color-border)",
+            }}
+          >
+            Device Voice
+          </button>
+          <button
+            onClick={() => {
+              if (ttsAvailable) setVoiceProvider("elevenlabs");
+            }}
+            className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: voiceProvider === "elevenlabs"
+                ? "var(--color-accent)"
+                : "var(--color-bg-raised)",
+              color: voiceProvider === "elevenlabs"
+                ? "#FFFFFF"
+                : ttsAvailable
+                  ? "var(--color-text-secondary)"
+                  : "var(--color-text-muted)",
+              border: voiceProvider === "elevenlabs"
+                ? "1px solid var(--color-accent)"
+                : "1px solid var(--color-border)",
+              opacity: ttsAvailable ? 1 : 0.5,
+              cursor: ttsAvailable ? "pointer" : "not-allowed",
+            }}
+          >
+            ElevenLabs
+          </button>
+        </div>
+
+        {/* ElevenLabs not configured message */}
+        {voiceProvider === "native" && !ttsAvailable && (
+          <p
+            className="text-xs mb-2"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            ElevenLabs not configured — set ELEVENLABS_API_KEY in server .env
+          </p>
+        )}
+
+        {/* Voice list (ElevenLabs only) */}
+        {voiceProvider === "elevenlabs" && ttsAvailable && (
+          <>
+            <div
+              className="rounded-xl mb-3"
+              style={{
+                maxHeight: "240px",
+                overflowY: "auto",
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg-raised)",
+              }}
+            >
+              {voices.map((v) => (
+                <div
+                  key={v.voice_id}
+                  className="flex items-center gap-2 px-3 py-2"
+                  style={{
+                    borderBottom: "1px solid var(--color-border)",
+                    backgroundColor: voiceId === v.voice_id
+                      ? "var(--color-accent)"
+                      : "transparent",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setVoiceId(v.voice_id)}
+                >
+                  <span
+                    className="flex-1 text-sm"
+                    style={{
+                      color: voiceId === v.voice_id
+                        ? "#FFFFFF"
+                        : "var(--color-text-primary)",
+                    }}
+                  >
+                    {v.name}
+                  </span>
+                  {v.category && (
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-xl"
+                      style={{
+                        backgroundColor: voiceId === v.voice_id
+                          ? "rgba(255,255,255,0.2)"
+                          : "var(--color-bg)",
+                        color: voiceId === v.voice_id
+                          ? "#FFFFFF"
+                          : "var(--color-text-muted)",
+                      }}
+                    >
+                      {v.category}
+                    </span>
+                  )}
+                  {v.preview_url && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (playingPreview === v.voice_id) {
+                          setPlayingPreview(null);
+                          return;
+                        }
+                        setPlayingPreview(v.voice_id);
+                        const audio = new Audio(v.preview_url);
+                        audio.onended = () => setPlayingPreview(null);
+                        audio.onerror = () => setPlayingPreview(null);
+                        audio.play().catch(() => setPlayingPreview(null));
+                      }}
+                      className="px-2 py-1 rounded-xl text-xs font-medium"
+                      style={{
+                        backgroundColor: playingPreview === v.voice_id
+                          ? "rgba(255,255,255,0.3)"
+                          : voiceId === v.voice_id
+                            ? "rgba(255,255,255,0.2)"
+                            : "var(--color-bg)",
+                        color: voiceId === v.voice_id
+                          ? "#FFFFFF"
+                          : "var(--color-text-secondary)",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {playingPreview === v.voice_id ? "Stop" : "Play"}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {voices.length === 0 && (
+                <div
+                  className="px-3 py-4 text-sm text-center"
+                  style={{ color: "var(--color-text-muted)" }}
+                >
+                  No voices available
+                </div>
+              )}
+            </div>
+
+            {/* Voice Model toggle */}
+            <label
+              className="block text-xs font-medium mb-1"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Voice Model
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setVoiceModelId("eleven_flash_v2_5")}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: voiceModelId === "eleven_flash_v2_5"
+                    ? "var(--color-accent)"
+                    : "var(--color-bg-raised)",
+                  color: voiceModelId === "eleven_flash_v2_5"
+                    ? "#FFFFFF"
+                    : "var(--color-text-secondary)",
+                  border: voiceModelId === "eleven_flash_v2_5"
+                    ? "1px solid var(--color-accent)"
+                    : "1px solid var(--color-border)",
+                }}
+              >
+                Flash v2.5
+              </button>
+              <button
+                onClick={() => setVoiceModelId("eleven_multilingual_v2")}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: voiceModelId === "eleven_multilingual_v2"
+                    ? "var(--color-accent)"
+                    : "var(--color-bg-raised)",
+                  color: voiceModelId === "eleven_multilingual_v2"
+                    ? "#FFFFFF"
+                    : "var(--color-text-secondary)",
+                  border: voiceModelId === "eleven_multilingual_v2"
+                    ? "1px solid var(--color-accent)"
+                    : "1px solid var(--color-border)",
+                }}
+              >
+                Multilingual v2
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Model — button picker instead of <select> */}
