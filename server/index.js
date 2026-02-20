@@ -22,7 +22,7 @@ import { DIRS } from "./config.js";
 import { runSetupIfNeeded } from "./setup.js";
 import { verifyToken, getUserCount, getUserByUsername, verifyPassword, signToken, createUser, getUserById, listUsers, updateUser, deleteUser } from "./auth.js";
 import { startScheduler, deliverPendingMessages } from "./scheduler.js";
-import { isAvailable as ttsIsAvailable, listVoices } from "./tts.js";
+import { isAvailable as ttsIsAvailable, listVoices, streamSpeech } from "./tts.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -536,8 +536,58 @@ app.post("/api/prompt", (req, res) => {
           : undefined,
       });
 
+      // Get voice config for TTS
+      const agentData = getAgent(agentId);
+      let voiceConfig = {};
+      if (agentData && agentData.voice_config) {
+        try {
+          voiceConfig = typeof agentData.voice_config === "string"
+            ? JSON.parse(agentData.voice_config)
+            : agentData.voice_config;
+        } catch {}
+      }
+
       // Split canvas commands and subtitle, broadcast in order
-      splitAndBroadcast(result.allToolCalls, result.finalTextContent, send);
+      splitAndBroadcast(result.allToolCalls, result.finalTextContent, send, {
+        onSubtitle: async (text) => {
+          if (!ttsIsAvailable() || !voiceConfig.voiceId) {
+            broadcastToUser(userId, { type: "tts_fallback" });
+            return;
+          }
+
+          let targetWs = null;
+          for (const [ws, conn] of wsConnections) {
+            if (conn.userId === userId && ws.readyState === 1) {
+              targetWs = ws;
+              break;
+            }
+          }
+          if (!targetWs) return;
+
+          const audioStream = await streamSpeech(text, voiceConfig);
+          if (!audioStream) {
+            broadcastToUser(userId, { type: "tts_fallback" });
+            return;
+          }
+
+          sendTo(targetWs, { type: "tts_start", format: "mp3" });
+
+          try {
+            const reader = audioStream.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (targetWs.readyState === 1) {
+                targetWs.send(value);
+              }
+            }
+          } catch (err) {
+            console.error("[tts] Stream error:", err.message);
+          }
+
+          sendTo(targetWs, { type: "tts_end" });
+        },
+      });
     } catch (error) {
       console.error("Error processing prompt:", error);
 
@@ -660,7 +710,43 @@ wss.on("connection", (ws, req) => {
             requestConfirmation: (command, reason) => requestConfirmationForClient(ws, command, reason),
             requestForm: (params) => requestFormForClient(ws, params),
           });
-          splitAndBroadcast(result.allToolCalls, result.finalTextContent, (d) => sendTo(ws, d));
+          const uploadAgentData = getAgent(agentId);
+          let uploadVoiceConfig = {};
+          if (uploadAgentData && uploadAgentData.voice_config) {
+            try {
+              uploadVoiceConfig = typeof uploadAgentData.voice_config === "string"
+                ? JSON.parse(uploadAgentData.voice_config)
+                : uploadAgentData.voice_config;
+            } catch {}
+          }
+
+          splitAndBroadcast(result.allToolCalls, result.finalTextContent, (d) => sendTo(ws, d), {
+            onSubtitle: async (text) => {
+              if (!ttsIsAvailable() || !uploadVoiceConfig.voiceId) {
+                sendTo(ws, { type: "tts_fallback" });
+                return;
+              }
+
+              const audioStream = await streamSpeech(text, uploadVoiceConfig);
+              if (!audioStream) {
+                sendTo(ws, { type: "tts_fallback" });
+                return;
+              }
+
+              sendTo(ws, { type: "tts_start", format: "mp3" });
+              try {
+                const reader = audioStream.getReader();
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (ws.readyState === 1) ws.send(value);
+                }
+              } catch (err) {
+                console.error("[tts] Stream error:", err.message);
+              }
+              sendTo(ws, { type: "tts_end" });
+            },
+          });
         } catch (err) {
           console.error("Error processing file upload:", err);
           sendTo(ws, { type: "subtitle", text: "Sorry, something went wrong processing that file." });
