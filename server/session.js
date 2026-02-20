@@ -6,6 +6,16 @@
 import { randomBytes } from "crypto";
 import db from "./db.js";
 
+// Token budget for the sliding message window.
+// Claude's context is 200K tokens. We reserve ~120K for messages,
+// leaving room for system prompt (~5K), tools (~15K), canvas state, and response.
+const MESSAGE_TOKEN_BUDGET = 120000;
+
+// Rough token estimate: ~4 characters per token
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+
 /**
  * Get or create a session for a user.
  * Each user gets one session (auto-created on first use).
@@ -42,11 +52,38 @@ export function addToolResults(results, agentId = "buddy", userId) {
 
 export function getMessages(agentId = "buddy", userId) {
   const sessionId = ensureSession(userId);
+
+  // Query from the tail — LIMIT 200 is far more than will ever fit in context,
+  // but ensures the query is O(1) regardless of total table size.
   const rows = db.prepare(
-    "SELECT role, content FROM messages WHERE session_id = ? AND agent_id = ? ORDER BY id"
+    "SELECT role, content FROM messages WHERE session_id = ? AND agent_id = ? ORDER BY id DESC LIMIT 200"
   ).all(sessionId, agentId);
 
-  return rows.map((row) => ({
+  // Reverse to chronological order
+  rows.reverse();
+
+  // Walk from newest to oldest, accumulating tokens
+  let totalTokens = 0;
+  let cutoff = 0;
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const tokens = estimateTokens(rows[i].content);
+    if (totalTokens + tokens > MESSAGE_TOKEN_BUDGET) {
+      cutoff = i + 1;
+      break;
+    }
+    totalTokens += tokens;
+  }
+
+  // Ensure we don't start on an assistant or tool_result message —
+  // Claude requires messages to start with a user role.
+  while (cutoff < rows.length && rows[cutoff].role !== "user") {
+    cutoff++;
+  }
+
+  const windowed = rows.slice(cutoff);
+
+  return windowed.map((row) => ({
     role: row.role,
     content: JSON.parse(row.content),
   }));
