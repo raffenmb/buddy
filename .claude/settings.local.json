@@ -27,7 +27,21 @@
       "Bash(docker ps:*)",
       "Bash(docker exec:*)",
       "Bash(MSYS_NO_PATHCONV=1 docker exec:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "WebFetch(domain:www.akamai.com)",
+      "WebFetch(domain:www.linode.com)",
+      "WebFetch(domain:www.dlt.com)",
+      "Bash(git check-ignore:*)",
+      "Bash(echo:*)",
+      "Bash(git worktree:*)",
+      "Bash(npm run install:all:*)",
+      "Bash(git -C /home/raff/Desktop/projects/buddy/.worktrees/sliding-memory-window rev-parse HEAD)",
+      "Bash(git -C /home/raff/Desktop/projects/buddy/.worktrees/sliding-memory-window log --oneline b4df889..HEAD)",
+      "Bash(git -C /home/raff/Desktop/projects/buddy/.worktrees/sliding-memory-window log --oneline --stat b4df889..HEAD)",
+      "Bash(git pull:*)",
+      "Bash(git branch:*)"
     ]
   }
 }

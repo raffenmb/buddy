@@ -63,6 +63,9 @@ export default function useWebSocket() {
               break;
             case "agent_switch":
               dispatch({ type: "SET_AGENT", payload: data.agent });
+              if (data.canvas) {
+                dispatch({ type: "CANVAS_REHYDRATE", payload: { elements: data.canvas } });
+              }
               break;
             case "canvas_rehydrate":
               dispatch({ type: "CANVAS_REHYDRATE", payload: { elements: data.elements } });
