@@ -37,14 +37,17 @@ async function listVoices() {
       headers: { "xi-api-key": API_KEY },
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[tts] listVoices error: HTTP ${res.status}`);
+      return [];
+    }
 
     const data = await res.json();
     return (data.voices || []).map((v) => ({
       voiceId: v.voice_id,
       name: v.name,
-      category: v.category,
-      previewUrl: v.preview_url,
+      category: v.category ?? "premade",
+      previewUrl: v.preview_url ?? null,
     }));
   } catch (err) {
     console.error("[tts] listVoices error:", err.message);
@@ -61,6 +64,7 @@ async function listVoices() {
  */
 async function streamSpeech(text, voiceConfig) {
   if (!isAvailable()) return null;
+  if (!voiceConfig?.voiceId) return null;
 
   const {
     voiceId,
@@ -72,20 +76,20 @@ async function streamSpeech(text, voiceConfig) {
   const url = `${BASE_URL}/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`;
 
   try {
+    const requestBody = { text, model_id: modelId };
+    if (stability !== undefined || similarityBoost !== undefined) {
+      requestBody.voice_settings = {};
+      if (stability !== undefined) requestBody.voice_settings.stability = stability;
+      if (similarityBoost !== undefined) requestBody.voice_settings.similarity_boost = similarityBoost;
+    }
+
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "xi-api-key": API_KEY,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability,
-          similarity_boost: similarityBoost,
-        },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (res.status === 401) {
