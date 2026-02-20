@@ -84,6 +84,7 @@ run_logged() {
 read_password() {
     local prompt="$1"
     local varname="$2"
+    local password_input
     printf "  %s (typing is hidden): " "$prompt"
     read -r -s password_input
     echo ""
@@ -443,7 +444,8 @@ elif [ "$REGISTER_STATUS" = "400" ]; then
         JSON_PASS=$(printf '%s' "$ADMIN_PASS" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
         JSON_DISPLAY=$(printf '%s' "$ADMIN_DISPLAY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
     else
-        # Fallback: escape backslashes and double quotes manually
+        # Fallback: escape backslashes and double quotes.
+        # Safe because read -r -s captures a single line (no newlines/tabs).
         ESCAPED_PASS=$(printf '%s' "$ADMIN_PASS" | sed 's/\\/\\\\/g; s/"/\\"/g')
         JSON_PASS="\"${ESCAPED_PASS}\""
         ESCAPED_DISPLAY=$(printf '%s' "$ADMIN_DISPLAY" | sed 's/\\/\\\\/g; s/"/\\"/g')
