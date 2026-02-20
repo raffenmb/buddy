@@ -32,7 +32,7 @@ const systemPromptTemplate = readFileSync(
  * Build the full system prompt from base template + per-agent personality,
  * user info, memories, and enabled custom skills.
  */
-function buildSystemPrompt(agent, memories) {
+function buildSystemPrompt(agent, memories, userId) {
   const personality = getIdentity(agent.id) || "Be helpful and friendly.";
 
   const userInfo = getUserInfo(agent.id);
@@ -95,6 +95,19 @@ function buildSystemPrompt(agent, memories) {
     }
   }
 
+  // Inject current canvas state so Claude knows what the user sees
+  if (userId) {
+    const canvasElements = getCanvasState(userId);
+    if (canvasElements.length > 0) {
+      basePrompt += "\n\n## What's currently on the canvas\nThe user can see the following elements on their screen right now:";
+      for (const el of canvasElements) {
+        const summary = el.title || el.content || el.body || "";
+        const truncated = summary.length > 150 ? summary.slice(0, 150) + "..." : summary;
+        basePrompt += `\n- [${el.type}] id="${el.id}"${truncated ? `: ${truncated}` : ""}`;
+      }
+    }
+  }
+
   return basePrompt;
 }
 
@@ -132,7 +145,7 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
   }
 
   const memories = getMemories(agentId);
-  const systemPrompt = buildSystemPrompt(agent, memories);
+  const systemPrompt = buildSystemPrompt(agent, memories, userId);
 
   // 2. Filter tools: canvas always included, platform tools always included, others per enabled_tools
   const enabledTools = parseEnabledTools(agent.enabled_tools);
