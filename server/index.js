@@ -14,7 +14,7 @@ import { dirname, join } from "path";
 import { writeFileSync } from "fs";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
-import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent } from "./agents.js";
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, getMemories, deleteMemory, getAgentFiles, readAgentFile, writeAgentFile, deleteAgentFile, canAccessAgent, seedBuddyAgent, attachUserToSharedAgents } from "./agents.js";
 import db from "./db.js";
 import { listSkills, validateAndAddSkill, updateSkill, deleteSkill, getSkillContent } from "./skills.js";
 import { resetSession } from "./session.js";
@@ -198,6 +198,7 @@ app.post("/api/admin/users", (req, res) => {
   try {
     const user = createUser({ username, password, displayName, isAdmin: false });
     seedBuddyAgent(user.id);
+    attachUserToSharedAgents(user.id);
     res.status(201).json(user);
   } catch (err) {
     if (err.message.includes("UNIQUE constraint")) {
@@ -252,6 +253,9 @@ app.get("/api/agents/:id", (req, res) => {
   }
   const agent = getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: "Agent not found" });
+  if (agent.is_shared) {
+    agent.userCount = db.prepare("SELECT COUNT(*) AS cnt FROM agent_users WHERE agent_id = ?").get(req.params.id).cnt;
+  }
   res.json(agent);
 });
 
@@ -259,12 +263,12 @@ app.post("/api/agents", (req, res) => {
   const { id, name, system_prompt, model, avatar_config, voice_config, identity, user_info, shared } = req.body;
   if (!id || !name) return res.status(400).json({ error: "id and name are required" });
   if (getAgent(id)) return res.status(409).json({ error: "Agent with this id already exists" });
-  if (shared && !req.user.isAdmin) return res.status(403).json({ error: "Only admins can create shared agents" });
 
   try {
     const agent = createAgent({
       id, name, model, system_prompt, avatar_config, voice_config, identity, user_info,
-      userId: shared ? null : req.user.userId,
+      userId: req.user.userId,
+      shared: !!shared,
     });
     res.status(201).json(agent);
   } catch (err) {
@@ -291,11 +295,15 @@ app.delete("/api/agents/:id", (req, res) => {
   try {
     const agent = getAgent(req.params.id);
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (!agent.user_id && !req.user.isAdmin) {
-      return res.status(403).json({ error: "Only admins can delete shared agents" });
+    if (!agent.is_shared && agent.user_id !== req.user.userId) {
+      return res.status(403).json({ error: "Cannot delete another user's agent" });
     }
-    deleteAgent(req.params.id, req.user.userId);
-    res.json({ status: "deleted" });
+    if (agent.is_shared) {
+      const isMember = db.prepare("SELECT 1 FROM agent_users WHERE agent_id = ? AND user_id = ?").get(req.params.id, req.user.userId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this shared agent" });
+    }
+    const result = deleteAgent(req.params.id, req.user.userId);
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
