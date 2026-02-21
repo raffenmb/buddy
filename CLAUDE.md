@@ -63,6 +63,11 @@ The server provides **platform primitives** (built-in tools) that give Buddy ful
 | `create_schedule` | Create one-shot or recurring scheduled events |
 | `list_schedules` | List a user's scheduled events |
 | `delete_schedule` | Remove a scheduled event |
+| `workspace_list` | List items in the agent's shared workspace |
+| `workspace_read` | Read a workspace item by key |
+| `workspace_write` | Create/update a workspace item |
+| `workspace_delete` | Delete a workspace item |
+| `workspace_publish` | Copy an item to a shared agent's workspace |
 
 **Skills (per agent via admin UI):**
 - Default skills seeded from `server/default-skills/` on first run (e.g. `search-youtube`, `remember-fact`)
@@ -77,7 +82,7 @@ Every AI response produces:
 ### Data Flow
 
 1. User types -> `POST /api/prompt` -> server appends to session history
-2. Server calls Claude API with full history + tool definitions (14 canvas + 13 platform, always on) + skill metadata in system prompt
+2. Server calls Claude API with full history + tool definitions (14 canvas + 18 platform, always on) + skill metadata in system prompt
 3. Tool use loop runs until `stop_reason === "end_turn"`. Platform tools execute on the host. Canvas tools return `{ status: "rendered" }`.
 4. Response Splitter separates tool calls (canvas) from text (subtitle)
 5. Canvas commands broadcast via WebSocket **first**, then subtitle — so visuals appear before Buddy "speaks"
@@ -113,6 +118,15 @@ The main agent is always the face of the conversation. Sub-agents are invisible 
 - Default model is Haiku for speed/cost efficiency
 - Results returned to main agent (summarized by Haiku if large)
 - Reusable templates stored in SQLite `agent_templates` table
+
+### Agent Workspaces
+
+Agents share data through workspaces — a key-value store in SQLite (`workspace_items` table).
+
+- **Private agents** share a user-scoped workspace (`user-<userId>`). All of a user's personal agents can read/write the same items.
+- **Shared agents** get an isolated workspace (`agent-<agentId>`). Cannot see into any user's private workspace.
+- **Publishing:** Private agents can explicitly copy items into a shared agent's workspace (one-way). This is the only cross-boundary data flow.
+- **Discovery:** Agents use `workspace_list` to see what's available — no injection into system prompt.
 
 ### Skills (Single Extensibility Layer)
 
@@ -193,7 +207,7 @@ BUDDY_ENV=production    # Always-on PC — full host access
 - `server/config.js` — BUDDY_HOME (`~/.buddy`), ENV, DIRS, GUARDS_PATH. Creates all directories and default config on first import. Every module imports paths from here.
 - `server/index.js` — Express + WebSocket entry point, confirmation gate, static file route (`/files` -> `~/.buddy/shared/`)
 - `server/claude-client.js` — Claude API integration with tool use loop, platform tool handlers, output summarization
-- `server/tools.js` — Tool definitions (14 canvas + 13 platform). Exports `PLATFORM_TOOL_NAMES`.
+- `server/tools.js` — Tool definitions (14 canvas + 18 platform). Exports `PLATFORM_TOOL_NAMES`.
 - `server/response-splitter.js` — Separates subtitle text from canvas commands
 - `server/db.js` — SQLite setup at `~/.buddy/buddy.db`, schema migrations
 - `server/agents.js` — Agent CRUD, reads identity/user markdown from `~/.buddy/agents/`. Buddy defaults to `["search-youtube", "remember-fact"]` enabled skills. Shared agents use `is_shared` flag + `agent_users` junction table for many-to-many membership. Includes startup migration to rename old tool names and remove platform tools from enabled_tools.
