@@ -304,21 +304,21 @@ export default function AgentEditor({ agentId, onDeleted }) {
             >
               {voices.map((v) => (
                 <div
-                  key={v.voice_id}
+                  key={v.voiceId}
                   className="flex items-center gap-2 px-3 py-2"
                   style={{
                     borderBottom: "1px solid var(--color-border)",
-                    backgroundColor: voiceId === v.voice_id
+                    backgroundColor: voiceId === v.voiceId
                       ? "var(--color-accent)"
                       : "transparent",
                     cursor: "pointer",
                   }}
-                  onClick={() => setVoiceId(v.voice_id)}
+                  onClick={() => setVoiceId(v.voiceId)}
                 >
                   <span
                     className="flex-1 text-sm"
                     style={{
-                      color: voiceId === v.voice_id
+                      color: voiceId === v.voiceId
                         ? "#FFFFFF"
                         : "var(--color-text-primary)",
                     }}
@@ -329,10 +329,10 @@ export default function AgentEditor({ agentId, onDeleted }) {
                     <span
                       className="text-xs px-2 py-0.5 rounded-xl"
                       style={{
-                        backgroundColor: voiceId === v.voice_id
+                        backgroundColor: voiceId === v.voiceId
                           ? "rgba(255,255,255,0.2)"
                           : "var(--color-bg)",
-                        color: voiceId === v.voice_id
+                        color: voiceId === v.voiceId
                           ? "#FFFFFF"
                           : "var(--color-text-muted)",
                       }}
@@ -340,35 +340,35 @@ export default function AgentEditor({ agentId, onDeleted }) {
                       {v.category}
                     </span>
                   )}
-                  {v.preview_url && (
+                  {v.previewUrl && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (playingPreview === v.voice_id) {
+                        if (playingPreview === v.voiceId) {
                           setPlayingPreview(null);
                           return;
                         }
-                        setPlayingPreview(v.voice_id);
-                        const audio = new Audio(v.preview_url);
+                        setPlayingPreview(v.voiceId);
+                        const audio = new Audio(v.previewUrl);
                         audio.onended = () => setPlayingPreview(null);
                         audio.onerror = () => setPlayingPreview(null);
                         audio.play().catch(() => setPlayingPreview(null));
                       }}
                       className="px-2 py-1 rounded-xl text-xs font-medium"
                       style={{
-                        backgroundColor: playingPreview === v.voice_id
+                        backgroundColor: playingPreview === v.voiceId
                           ? "rgba(255,255,255,0.3)"
-                          : voiceId === v.voice_id
+                          : voiceId === v.voiceId
                             ? "rgba(255,255,255,0.2)"
                             : "var(--color-bg)",
-                        color: voiceId === v.voice_id
+                        color: voiceId === v.voiceId
                           ? "#FFFFFF"
                           : "var(--color-text-secondary)",
                         border: "none",
                         cursor: "pointer",
                       }}
                     >
-                      {playingPreview === v.voice_id ? "Stop" : "Play"}
+                      {playingPreview === v.voiceId ? "Stop" : "Play"}
                     </button>
                   )}
                 </div>
