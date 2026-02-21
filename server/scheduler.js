@@ -103,14 +103,14 @@ async function executeSchedule(schedule) {
         "INSERT INTO pending_messages (user_id, agent_id, schedule_id, messages) VALUES (?, ?, ?, ?)"
       ).run(schedule.user_id, schedule.agent_id, schedule.id, JSON.stringify(messages));
       console.log(`[scheduler] User offline — queued response for '${schedule.name}'`);
-
-      // Send push notification to mobile device
-      await sendPushNotification(
-        schedule.user_id,
-        "Buddy",
-        `Scheduled: ${schedule.name}`
-      );
     }
+
+    // Always send push notification — user may be on mobile with app backgrounded
+    await sendPushNotification(
+      schedule.user_id,
+      "Buddy",
+      `Scheduled: ${schedule.name}`
+    );
   } catch (err) {
     console.error(`[scheduler] processPrompt failed for '${schedule.name}':`, err);
   }
