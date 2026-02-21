@@ -11,7 +11,7 @@
     "dev:server": "cd server && node index.js",
     "dev:client": "cd client && npm run dev",
     "dev:mobile": "cd mobile && npx expo start",
-    "install:all": "npm install",
+    "install:all": "npm install --install-strategy=nested",
     "build": "cd client && npm run build",
     "start": "cd server && NODE_ENV=production node index.js"
   }

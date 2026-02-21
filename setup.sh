@@ -352,6 +352,9 @@ fi
 
 step "Installing npm dependencies..."
 
+# Uses --install-strategy=nested to work around npm workspace bug where
+# platform-specific optional dependencies (Rollup, Tailwind oxide) are not
+# installed correctly during hoisting. See: https://github.com/npm/cli/issues/4828
 run_logged "Installing server and client dependencies" npm --prefix "$SCRIPT_DIR" run install:all || \
     die "Failed to install dependencies." \
         "Check the log file and make sure you have internet access."
