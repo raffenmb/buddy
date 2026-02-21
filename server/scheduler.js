@@ -7,6 +7,7 @@ import db from "./db.js";
 import { processPrompt } from "./claude-client.js";
 import { splitAndBroadcast } from "./response-splitter.js";
 import { getAgent } from "./agents.js";
+import { sendPushNotification } from "./push.js";
 import { CronExpressionParser } from "cron-parser";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -102,6 +103,13 @@ async function executeSchedule(schedule) {
         "INSERT INTO pending_messages (user_id, agent_id, schedule_id, messages) VALUES (?, ?, ?, ?)"
       ).run(schedule.user_id, schedule.agent_id, schedule.id, JSON.stringify(messages));
       console.log(`[scheduler] User offline — queued response for '${schedule.name}'`);
+
+      // Send push notification to mobile device
+      await sendPushNotification(
+        schedule.user_id,
+        "Buddy",
+        `Scheduled: ${schedule.name}`
+      );
     }
   } catch (err) {
     console.error(`[scheduler] processPrompt failed for '${schedule.name}':`, err);

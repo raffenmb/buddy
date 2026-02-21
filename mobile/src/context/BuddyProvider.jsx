@@ -1,5 +1,5 @@
-import { createContext, useContext, useReducer, useRef } from "react";
-import { buddyReducer, initialState } from "@buddy/shared";
+import { createContext, useContext, useReducer, useRef } from 'react';
+import { buddyReducer, initialState } from '@buddy/shared';
 
 const BuddyContext = createContext(null);
 
@@ -17,7 +17,7 @@ export function BuddyProvider({ children }) {
 export function useBuddy() {
   const context = useContext(BuddyContext);
   if (!context) {
-    throw new Error("useBuddy must be used within a BuddyProvider");
+    throw new Error('useBuddy must be used within a BuddyProvider');
   }
   return context;
 }

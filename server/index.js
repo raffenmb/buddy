@@ -468,6 +468,15 @@ app.get("/api/tts/status", (req, res) => {
   res.json({ available: ttsIsAvailable() });
 });
 
+// ─── Push Notification Routes ────────────────────────────────────────────────
+
+app.put("/api/push/register", (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "Token required" });
+  db.prepare("UPDATE users SET push_token = ? WHERE id = ?").run(token, req.user.userId);
+  res.json({ status: "ok" });
+});
+
 // ─── Session Routes ───────────────────────────────────────────────────────────
 
 app.post("/api/session/reset", (req, res) => {
