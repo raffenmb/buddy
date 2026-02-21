@@ -6,14 +6,16 @@ import Svg, { Path, Polyline } from 'react-native-svg';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../components/AlertModal';
-import { getApi } from '../lib/api';
+import { getApi, getBaseUrl } from '../lib/api';
+import { removeToken } from '../lib/storage';
 import { AVATAR_PRESETS } from '../assets/avatarPresets';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function AdminDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { user } = useAuth();
-  const { showAlert } = useAlert();
+  const { showAlert, showConfirm } = useAlert();
   const navigation = useNavigation();
   const [agents, setAgents] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -293,6 +295,43 @@ export default function AdminDashboardScreen() {
             </Pressable>
           </View>
         )}
+
+        {/* Server info + change server */}
+        <View style={{ marginTop: 24, gap: 12 }}>
+          <View
+            className="rounded-2xl px-4 py-3"
+            style={{
+              backgroundColor: colors.bgSurface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Text className="text-xs" style={{ color: colors.textMuted }}>
+              Connected to: {getBaseUrl()}
+            </Text>
+          </View>
+          <Pressable
+            onPress={async () => {
+              const confirmed = await showConfirm(
+                'Disconnect from this server? You will need to enter a new server URL.'
+              );
+              if (!confirmed) return;
+              await removeToken();
+              await AsyncStorage.removeItem('buddy_server_url');
+              navigation.reset({ index: 0, routes: [{ name: 'ServerSetup' }] });
+            }}
+            className="rounded-2xl px-4 py-3.5 items-center"
+            style={{
+              backgroundColor: colors.bgSurface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Text className="text-sm font-medium" style={{ color: '#EF4444' }}>
+              Change Server
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </View>
   );
