@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getServerUrl } from '../lib/storage';
@@ -13,7 +13,7 @@ import AgentEditorScreen from '../screens/AgentEditorScreen';
 import ToolSelectorScreen from '../screens/ToolSelectorScreen';
 import UserListScreen from '../screens/UserListScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 function RootNavigator() {
   const { user, loading: authLoading } = useAuth();

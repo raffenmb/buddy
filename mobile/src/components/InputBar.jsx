@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, TextInput, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Polygon } from 'react-native-svg';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBuddy } from '../context/BuddyProvider';
@@ -7,6 +8,7 @@ import { getApi } from '../lib/api';
 
 export default function InputBar() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { state, dispatch, wsRef } = useBuddy();
   const [text, setText] = useState('');
 
@@ -38,7 +40,7 @@ export default function InputBar() {
   return (
     <View
       className="px-3 py-3"
-      style={{ backgroundColor: colors.bgBase }}
+      style={{ backgroundColor: colors.bgBase, paddingBottom: Math.max(insets.bottom, 12) }}
     >
       <View
         className="flex-row items-center gap-2 rounded-full px-4 py-2"

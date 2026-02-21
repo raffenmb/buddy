@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Polyline } from 'react-native-svg';
-import { Audio } from 'expo-av';
+import { AudioModule } from 'expo-audio';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBuddy } from '../context/BuddyProvider';
 import { useAlert } from '../components/AlertModal';
@@ -71,7 +71,7 @@ export default function AgentEditorScreen() {
   useEffect(() => {
     return () => {
       if (previewSound) {
-        previewSound.unloadAsync().catch(() => {});
+        try { previewSound.remove(); } catch {}
       }
     };
   }, [previewSound]);
@@ -191,7 +191,7 @@ export default function AgentEditorScreen() {
 
     // Stop any existing preview
     if (previewSound) {
-      await previewSound.unloadAsync().catch(() => {});
+      try { previewSound.remove(); } catch {}
       setPreviewSound(null);
       if (playingPreview) {
         setPlayingPreview(null);
@@ -200,16 +200,16 @@ export default function AgentEditorScreen() {
     }
 
     try {
-      const { sound } = await Audio.Sound.createAsync({ uri: previewUrl });
-      setPreviewSound(sound);
-      sound.setOnPlaybackStatusUpdate((status) => {
+      const player = AudioModule.createPlayer(previewUrl);
+      setPreviewSound(player);
+      player.addListener('playbackStatusUpdate', (status) => {
         if (status.didJustFinish) {
           setPlayingPreview(null);
-          sound.unloadAsync().catch(() => {});
+          player.remove();
           setPreviewSound(null);
         }
       });
-      await sound.playAsync();
+      player.play();
     } catch {
       setPlayingPreview(null);
     }

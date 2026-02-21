@@ -17,7 +17,9 @@ export default function ServerSetupScreen({ navigation }) {
     try {
       await setServerUrl(url.trim());
       const api = await initApi();
-      await api('/api/tts/status');
+      // Use fetch directly — no auth token yet
+      const res = await fetch(`${url.trim()}/api/health`);
+      if (!res.ok) throw new Error('Server unreachable');
       navigation.replace('Login');
     } catch (e) {
       setError('Cannot reach server. Check the URL and try again.');

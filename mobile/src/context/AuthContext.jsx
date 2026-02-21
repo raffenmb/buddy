@@ -35,15 +35,15 @@ export function AuthProvider({ children }) {
     await initApi();
     setUser(data.user || data);
 
-    // Register push notification token with server
-    const pushToken = await registerForPushNotifications();
-    if (pushToken) {
-      try {
+    // Register push notification token with server (best-effort, don't block login)
+    try {
+      const pushToken = await registerForPushNotifications();
+      if (pushToken) {
         const freshApi = getApi();
         await freshApi('/api/push/register', { method: 'PUT', body: { token: pushToken } });
-      } catch (e) {
-        console.log('[push] Failed to register token:', e.message);
       }
+    } catch (e) {
+      console.log('[push] Failed to register token:', e.message);
     }
 
     return data;

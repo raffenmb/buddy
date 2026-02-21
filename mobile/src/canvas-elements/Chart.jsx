@@ -7,7 +7,7 @@ import {
   VictoryPie,
   VictoryAxis,
   VictoryTheme,
-} from 'victory-native';
+} from 'victory';
 import { useTheme } from '../theme/ThemeProvider';
 
 const LIGHT_COLORS = [

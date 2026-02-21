@@ -1,5 +1,6 @@
 import { KeyboardAvoidingView, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import useWebSocket from '../hooks/useWebSocket';
 import useAudioPlayer from '../hooks/useAudioPlayer';
@@ -12,6 +13,7 @@ import InputBar from '../components/InputBar';
 export default function MainScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   useWebSocket();
   useAudioPlayer();
   useNotifications(navigation);
@@ -19,7 +21,8 @@ export default function MainScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1"
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -insets.bottom}
       style={{ backgroundColor: colors.bgBase }}
     >
       <TopBar />

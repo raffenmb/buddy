@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { Audio } from 'expo-av';
+import { useAudioPlayer as useExpoAudioPlayer, AudioModule } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import * as FileSystem from 'expo-file-system';
 import { useBuddy } from '../context/BuddyProvider';
@@ -7,17 +7,17 @@ import { useBuddy } from '../context/BuddyProvider';
 export default function useAudioPlayer() {
   const { state, dispatch, wsRef } = useBuddy();
   const chunksRef = useRef([]);
-  const soundRef = useRef(null);
+  const playerRef = useRef(null);
   const fallbackTimer = useRef(null);
   const isTtsActive = useRef(false);
   const fallbackTextRef = useRef(null);
+  const currentUriRef = useRef(null);
 
   // Configure audio mode once
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
+    AudioModule.setAudioModeAsync({
       playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
+      shouldPlayInBackground: true,
     });
   }, []);
 
@@ -27,12 +27,16 @@ export default function useAudioPlayer() {
 
   // Cancel all audio playback
   const cancelAudio = useCallback(async () => {
-    if (soundRef.current) {
+    if (playerRef.current) {
       try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        playerRef.current.pause();
+        playerRef.current.remove();
       } catch {}
-      soundRef.current = null;
+      playerRef.current = null;
+    }
+    if (currentUriRef.current) {
+      FileSystem.deleteAsync(currentUriRef.current, { idempotent: true });
+      currentUriRef.current = null;
     }
     Speech.stop();
     chunksRef.current = [];
@@ -41,7 +45,7 @@ export default function useAudioPlayer() {
     stopTalking();
   }, [stopTalking]);
 
-  // Play accumulated MP3 chunks via expo-av
+  // Play accumulated MP3 chunks via expo-audio
   const playAccumulatedAudio = useCallback(async () => {
     const chunks = chunksRef.current;
     chunksRef.current = [];
@@ -61,7 +65,7 @@ export default function useAudioPlayer() {
         offset += chunk.byteLength;
       }
 
-      // Convert to base64 and write to temp file (expo-av needs a URI)
+      // Convert to base64 and write to temp file
       const bytes = merged;
       let binary = '';
       for (let i = 0; i < bytes.byteLength; i++) {
@@ -72,22 +76,23 @@ export default function useAudioPlayer() {
       await FileSystem.writeAsStringAsync(uri, base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      currentUriRef.current = uri;
 
-      // Play the audio file
-      const { sound } = await Audio.Sound.createAsync({ uri });
-      soundRef.current = sound;
+      // Play using expo-audio AudioPlayer
+      const player = AudioModule.createPlayer(uri);
+      playerRef.current = player;
 
-      sound.setOnPlaybackStatusUpdate((status) => {
+      player.addListener('playbackStatusUpdate', (status) => {
         if (status.didJustFinish) {
           stopTalking();
-          sound.unloadAsync();
-          soundRef.current = null;
-          // Clean up temp file
+          player.remove();
+          playerRef.current = null;
           FileSystem.deleteAsync(uri, { idempotent: true });
+          currentUriRef.current = null;
         }
       });
 
-      await sound.playAsync();
+      player.play();
     } catch (err) {
       console.error('[audio] Failed to play audio:', err);
       stopTalking();
