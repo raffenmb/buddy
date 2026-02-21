@@ -527,6 +527,88 @@ const tools = [
     },
   },
   {
+    name: "workspace_list",
+    description:
+      "List all items in the shared workspace accessible to this agent. Private agents share a workspace with all other agents owned by the same user. Shared agents have their own isolated workspace. Returns item keys, value previews, who created each item, and when it was last updated.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "workspace_read",
+    description:
+      "Read a specific item from the shared workspace by its key. Returns the full value (JSON or plain text), creator, and timestamps.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The item key to read.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "workspace_write",
+    description:
+      "Create or update an item in the shared workspace. Use for storing shopping lists, meal plans, notes, or any data that should be accessible to other agents. Value can be JSON (for structured data like lists) or plain text (for freeform notes).",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The item key (e.g. 'shopping-list', 'meal-plan', 'project-notes').",
+        },
+        value: {
+          type: "string",
+          description: "The content to store. Use JSON for structured data (arrays, objects) or plain text for freeform content.",
+        },
+      },
+      required: ["key", "value"],
+    },
+  },
+  {
+    name: "workspace_delete",
+    description:
+      "Remove an item from the shared workspace by its key.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The item key to delete.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "workspace_publish",
+    description:
+      "Copy an item from your workspace into a shared agent's workspace. Only works from a private agent's workspace to a shared agent's workspace (not the reverse). Use when you want to make private data available to a shared agent that other users can access.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The item key to publish from your workspace.",
+        },
+        target_agent_id: {
+          type: "string",
+          description: "The ID of the shared agent to publish to.",
+        },
+        target_key: {
+          type: "string",
+          description: "Optional different key name in the target workspace. Defaults to the same key.",
+        },
+      },
+      required: ["key", "target_agent_id"],
+    },
+  },
+  {
     name: "shell_exec",
     description:
       "Execute a shell command on the host machine. Has access to all installed utilities (git, node, python3, curl, ffmpeg, etc.). Destructive commands (rm, mv, chmod, etc.) require user confirmation before executing. Use for running scripts, data processing, installing packages, system tasks, and any command-line operation.",
@@ -822,6 +904,11 @@ export const PLATFORM_TOOL_NAMES = [
   "create_schedule",
   "list_schedules",
   "delete_schedule",
+  "workspace_list",
+  "workspace_read",
+  "workspace_write",
+  "workspace_delete",
+  "workspace_publish",
 ];
 
 export default tools;
