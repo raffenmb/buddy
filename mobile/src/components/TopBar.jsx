@@ -1,17 +1,40 @@
-import { View, Text, Pressable } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, Modal, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBuddy } from '../context/BuddyProvider';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { getApi } from '../lib/api';
 import Svg, { Circle, Path, Line, Polyline } from 'react-native-svg';
 
 export default function TopBar() {
   const insets = useSafeAreaInsets();
   const { colors, isDark, toggleTheme } = useTheme();
-  const { state } = useBuddy();
+  const { state, dispatch } = useBuddy();
   const { user, logout } = useAuth();
   const navigation = useNavigation();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [agents, setAgents] = useState([]);
+
+  async function openPicker() {
+    try {
+      const api = getApi();
+      const list = await api('/api/agents');
+      setAgents(list);
+    } catch {
+      setAgents([]);
+    }
+    setPickerOpen(true);
+  }
+
+  function switchAgent(agent) {
+    setPickerOpen(false);
+    if (agent.id === state.agent.id) return;
+    dispatch({ type: 'SET_AGENT', payload: { id: agent.id, name: agent.name, avatar: agent.avatar || 'buddy' } });
+    dispatch({ type: 'CLEAR_SUBTITLE' });
+    dispatch({ type: 'CANVAS_SET_MODE', payload: { mode: 'clear' } });
+  }
 
   return (
     <View
@@ -23,8 +46,11 @@ export default function TopBar() {
         borderBottomColor: colors.border,
       }}
     >
-      {/* Left: agent name + connection dot */}
-      <View className="flex-row items-center gap-2">
+      {/* Left: agent name (tappable) + connection dot */}
+      <Pressable
+        onPress={openPicker}
+        className="flex-row items-center gap-2"
+      >
         <View
           className="w-2 h-2 rounded-full"
           style={{
@@ -39,7 +65,91 @@ export default function TopBar() {
         >
           {state.agent.name || 'Buddy'}
         </Text>
-      </View>
+        {/* Chevron */}
+        <Svg
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={colors.textMuted}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <Polyline points="6 9 12 15 18 9" />
+        </Svg>
+      </Pressable>
+
+      {/* Agent picker modal */}
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable
+          className="flex-1 justify-start"
+          style={{ backgroundColor: 'rgba(0,0,0,0.3)' }}
+          onPress={() => setPickerOpen(false)}
+        >
+          <View
+            style={{
+              marginTop: insets.top + 48,
+              marginLeft: 12,
+              backgroundColor: colors.bgSurface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 12,
+              minWidth: 180,
+              maxWidth: 260,
+              maxHeight: 300,
+              overflow: 'hidden',
+            }}
+          >
+            <ScrollView>
+              {agents.map((a) => (
+                <Pressable
+                  key={a.id}
+                  onPress={() => switchAgent(a)}
+                  className="px-4 py-3"
+                  style={{
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Text
+                      className="text-sm"
+                      style={{
+                        color: a.id === state.agent.id ? colors.accent : colors.textPrimary,
+                        fontWeight: a.id === state.agent.id ? '600' : '400',
+                      }}
+                    >
+                      {a.name}
+                    </Text>
+                    {!a.user_id && (
+                      <Text
+                        className="text-xs"
+                        style={{ color: colors.textMuted }}
+                      >
+                        (shared)
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+              {agents.length === 0 && (
+                <Text
+                  className="px-4 py-3 text-sm"
+                  style={{ color: colors.textMuted }}
+                >
+                  No agents found
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* Right: user name, logout, theme toggle, gear */}
       <View className="flex-row items-center gap-3">
