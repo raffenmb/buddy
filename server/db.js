@@ -93,6 +93,17 @@ db.exec(`
     created_at  TEXT DEFAULT (datetime('now')),
     delivered   INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS workspace_items (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL,
+    key           TEXT NOT NULL,
+    value         TEXT NOT NULL,
+    created_by    TEXT NOT NULL,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(workspace_id, key)
+  );
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
@@ -115,6 +126,9 @@ try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(ne
 
 // Composite index for sliding window message query
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_messages_session_agent_id ON messages(session_id, agent_id, id)"); } catch {}
+
+// Index for workspace item queries
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_workspace_items_workspace ON workspace_items(workspace_id)"); } catch {}
 
 // Add is_shared column to agents
 try { db.exec("ALTER TABLE agents ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0"); } catch {}
