@@ -2,6 +2,7 @@ import { View, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuddyProvider } from '../context/BuddyProvider';
 import useWebSocket from '../hooks/useWebSocket';
+import useAudioPlayer from '../hooks/useAudioPlayer';
 import TopBar from '../components/TopBar';
 import Canvas from '../components/Canvas';
 import Avatar from '../components/Avatar';
@@ -10,6 +11,7 @@ import InputBar from '../components/InputBar';
 function ChatScreen() {
   const { colors } = useTheme();
   useWebSocket();
+  useAudioPlayer();
 
   return (
     <KeyboardAvoidingView
