@@ -101,6 +101,8 @@ const PLATFORM_TOOLS = [
   "shell_exec", "read_file", "write_file", "list_directory",
   "process_start", "process_stop", "process_status", "process_logs",
   "spawn_agent", "create_agent_template",
+  "create_schedule", "list_schedules", "delete_schedule",
+  "workspace_list", "workspace_read", "workspace_write", "workspace_delete", "workspace_publish",
 ];
 
 for (const agent of db.prepare("SELECT id, enabled_tools FROM agents").all()) {

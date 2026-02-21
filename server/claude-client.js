@@ -378,6 +378,7 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
             type: "tool_result",
             tool_use_id: toolUse.id,
             content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
           };
         }
         if (toolUse.name === "workspace_read") {
@@ -395,6 +396,7 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
             type: "tool_result",
             tool_use_id: toolUse.id,
             content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
           };
         }
         if (toolUse.name === "workspace_delete") {

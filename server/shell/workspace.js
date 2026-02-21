@@ -14,7 +14,7 @@ import { getAgent } from "../agents.js";
  */
 function resolveWorkspaceId(agentId, userId) {
   const agent = getAgent(agentId);
-  if (!agent) throw new Error(`Agent '${agentId}' not found`);
+  if (!agent) return null;
   return agent.is_shared ? `agent-${agentId}` : `user-${userId}`;
 }
 
@@ -24,6 +24,7 @@ function resolveWorkspaceId(agentId, userId) {
  */
 export function listWorkspace(agentId, userId) {
   const workspaceId = resolveWorkspaceId(agentId, userId);
+  if (!workspaceId) return { error: `Agent '${agentId}' not found` };
   const rows = db.prepare(
     "SELECT key, value, created_by, updated_at FROM workspace_items WHERE workspace_id = ? ORDER BY updated_at DESC"
   ).all(workspaceId);
@@ -41,6 +42,7 @@ export function listWorkspace(agentId, userId) {
  */
 export function readWorkspace(agentId, userId, key) {
   const workspaceId = resolveWorkspaceId(agentId, userId);
+  if (!workspaceId) return { error: `Agent '${agentId}' not found` };
   const row = db.prepare(
     "SELECT key, value, created_by, created_at, updated_at FROM workspace_items WHERE workspace_id = ? AND key = ?"
   ).get(workspaceId, key);
@@ -54,6 +56,7 @@ export function readWorkspace(agentId, userId, key) {
  */
 export function writeWorkspace(agentId, userId, key, value) {
   const workspaceId = resolveWorkspaceId(agentId, userId);
+  if (!workspaceId) return { error: `Agent '${agentId}' not found` };
   const id = randomUUID();
 
   db.prepare(`
@@ -72,6 +75,7 @@ export function writeWorkspace(agentId, userId, key, value) {
  */
 export function deleteWorkspace(agentId, userId, key) {
   const workspaceId = resolveWorkspaceId(agentId, userId);
+  if (!workspaceId) return { error: `Agent '${agentId}' not found` };
   const result = db.prepare(
     "DELETE FROM workspace_items WHERE workspace_id = ? AND key = ?"
   ).run(workspaceId, key);
@@ -87,7 +91,7 @@ export function deleteWorkspace(agentId, userId, key) {
 export function publishWorkspace(agentId, userId, key, targetAgentId, targetKey) {
   // Verify source agent is private (not shared)
   const sourceAgent = getAgent(agentId);
-  if (!sourceAgent) throw new Error(`Agent '${agentId}' not found`);
+  if (!sourceAgent) return { error: `Agent '${agentId}' not found` };
   if (sourceAgent.is_shared) {
     return { error: "Cannot publish from a shared agent. Only private agents can publish to shared agents." };
   }
