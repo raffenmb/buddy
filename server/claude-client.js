@@ -17,6 +17,7 @@ import { startProcess, stopProcess, getProcessStatus, getProcessLogs } from "./s
 import { maybeSummarize } from "./shell/summarizer.js";
 import { spawnSubAgent, createTemplate } from "./subagent/spawner.js";
 import { createSchedule, listSchedules, deleteSchedule } from "./scheduler.js";
+import { listWorkspace, readWorkspace, writeWorkspace, deleteWorkspace, publishWorkspace } from "./shell/workspace.js";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -370,6 +371,54 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
               is_error: true,
             };
           }
+        }
+        if (toolUse.name === "workspace_list") {
+          const result = listWorkspace(agentId, userId);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          };
+        }
+        if (toolUse.name === "workspace_read") {
+          const result = readWorkspace(agentId, userId, toolUse.input.key);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "workspace_write") {
+          const result = writeWorkspace(agentId, userId, toolUse.input.key, toolUse.input.value);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          };
+        }
+        if (toolUse.name === "workspace_delete") {
+          const result = deleteWorkspace(agentId, userId, toolUse.input.key);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "workspace_publish") {
+          const result = publishWorkspace(
+            agentId, userId,
+            toolUse.input.key,
+            toolUse.input.target_agent_id,
+            toolUse.input.target_key
+          );
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
         }
         // Form tool — blocks until user submits
         if (toolUse.name === "canvas_show_form") {
