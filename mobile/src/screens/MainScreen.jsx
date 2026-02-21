@@ -1,7 +1,9 @@
 import { KeyboardAvoidingView, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeProvider';
 import useWebSocket from '../hooks/useWebSocket';
 import useAudioPlayer from '../hooks/useAudioPlayer';
+import useNotifications from '../hooks/useNotifications';
 import TopBar from '../components/TopBar';
 import Canvas from '../components/Canvas';
 import Avatar from '../components/Avatar';
@@ -9,8 +11,10 @@ import InputBar from '../components/InputBar';
 
 export default function MainScreen() {
   const { colors } = useTheme();
+  const navigation = useNavigation();
   useWebSocket();
   useAudioPlayer();
+  useNotifications(navigation);
 
   return (
     <KeyboardAvoidingView

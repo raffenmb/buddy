@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getToken, setToken, removeToken } from '../lib/storage';
 import { initApi, getApi } from '../lib/api';
+import { registerForPushNotifications } from '../hooks/useNotifications';
 
 const AuthContext = createContext();
 
@@ -33,6 +34,18 @@ export function AuthProvider({ children }) {
     await setToken(data.token);
     await initApi();
     setUser(data.user || data);
+
+    // Register push notification token with server
+    const pushToken = await registerForPushNotifications();
+    if (pushToken) {
+      try {
+        const freshApi = getApi();
+        await freshApi('/api/push/register', { method: 'PUT', body: { token: pushToken } });
+      } catch (e) {
+        console.log('[push] Failed to register token:', e.message);
+      }
+    }
+
     return data;
   }, []);
 

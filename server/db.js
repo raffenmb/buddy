@@ -146,6 +146,9 @@ if (legacyShared.length > 0) {
   migrate();
 }
 
+// Add push_token column to users
+try { db.exec("ALTER TABLE users ADD COLUMN push_token TEXT DEFAULT NULL"); } catch {}
+
 // Seed default session
 db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('default')").run();
 
