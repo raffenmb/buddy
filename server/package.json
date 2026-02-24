@@ -16,6 +16,7 @@
     "expo-server-sdk": "^6.0.0",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
+    "puppeteer": "^24.0.0",
     "ws": "^8.18.0",
     "yt-search": "^2.13.1"
   }

@@ -17,7 +17,7 @@ Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on
 
 ## Tech Stack
 
-- **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `yt-search`
+- **Backend:** Node.js 18+, Express, `ws` (WebSockets), `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `yt-search`, `puppeteer`
 - **Frontend:** React 18 with Vite, Tailwind CSS 4, Victory (charts)
 - **Database:** SQLite via `better-sqlite3` at `~/.buddy/buddy.db`
 - **State:** React Context + useReducer (command/reducer pattern)
@@ -68,6 +68,17 @@ The server provides **platform primitives** (built-in tools) that give Buddy ful
 | `workspace_write` | Create/update a workspace item |
 | `workspace_delete` | Delete a workspace item |
 | `workspace_publish` | Copy an item to a shared agent's workspace |
+| `memory_save` | Save a fact to long-term memory |
+| `memory_search` | Search memories by keyword |
+| `memory_list` | List all memory keys |
+| `memory_delete` | Delete a memory by key |
+| `browser_open` | Open a URL in headless browser |
+| `browser_snapshot` | Get accessibility tree of current page |
+| `browser_screenshot` | Take a PNG screenshot |
+| `browser_click` | Click an element by selector or text |
+| `browser_type` | Type text into a field |
+| `browser_navigate` | Navigate to a different URL |
+| `browser_close` | Close the browser |
 
 **Skills (per agent via admin UI):**
 - Default skills seeded from `server/default-skills/` on first run (e.g. `search-youtube`, `remember-fact`)

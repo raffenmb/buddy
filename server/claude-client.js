@@ -18,6 +18,8 @@ import { maybeSummarize } from "./shell/summarizer.js";
 import { spawnSubAgent, createTemplate } from "./subagent/spawner.js";
 import { createSchedule, listSchedules, deleteSchedule } from "./scheduler.js";
 import { listWorkspace, readWorkspace, writeWorkspace, deleteWorkspace, publishWorkspace } from "./shell/workspace.js";
+import { saveMemory, searchMemories, listMemoryKeys, removeMemory } from "./shell/memory.js";
+import { openBrowser, getSnapshot, takeScreenshot, clickElement, typeText, navigateTo, closeBrowser } from "./shell/browser.js";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,9 +45,13 @@ function buildSystemPrompt(agent, memories, userId) {
 
   let memoriesSection = "";
   if (memories.length > 0) {
+    const injected = memories.slice(0, 15);
     memoriesSection = "## What you remember about the user\n";
-    for (const mem of memories) {
+    for (const mem of injected) {
       memoriesSection += `- ${mem.key}: ${mem.value}\n`;
+    }
+    if (memories.length > 15) {
+      memoriesSection += `\nYou have ${memories.length} total memories. Use memory_search to recall specifics not shown above.`;
     }
   }
 
@@ -415,6 +421,103 @@ export async function processPrompt(userText, agentId = "buddy", userId, callbac
             toolUse.input.target_agent_id,
             toolUse.input.target_key
           );
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "memory_save") {
+          const result = saveMemory(agentId, toolUse.input.key, toolUse.input.value);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "memory_search") {
+          const result = searchMemories(agentId, toolUse.input.query);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          };
+        }
+        if (toolUse.name === "memory_list") {
+          const result = listMemoryKeys(agentId, toolUse.input.limit);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          };
+        }
+        if (toolUse.name === "memory_delete") {
+          const result = removeMemory(agentId, toolUse.input.key);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_open") {
+          const result = await openBrowser(toolUse.input.url);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_snapshot") {
+          const result = await getSnapshot();
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_screenshot") {
+          const result = await takeScreenshot(toolUse.input.path);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_click") {
+          const result = await clickElement(toolUse.input.selector, { text: toolUse.input.text });
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_type") {
+          const result = await typeText(toolUse.input.text, toolUse.input.selector, { pressEnter: toolUse.input.press_enter });
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_navigate") {
+          const result = await navigateTo(toolUse.input.url);
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+            ...(result.error && { is_error: true }),
+          };
+        }
+        if (toolUse.name === "browser_close") {
+          const result = await closeBrowser();
           return {
             type: "tool_result",
             tool_use_id: toolUse.id,

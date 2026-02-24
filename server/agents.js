@@ -72,7 +72,7 @@ export function seedBuddyAgent(userId) {
   `).run(agentId, defaultModel, BUDDY_PERSONALITY, userId);
 
   db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = ? AND enabled_tools IS NULL").run(
-    JSON.stringify(["search-youtube", "remember-fact"]), agentId
+    JSON.stringify(["search-youtube"]), agentId
   );
 
   const dir = ensureAgentDir(agentId);
@@ -88,7 +88,7 @@ export function seedBuddyAgent(userId) {
 const buddyExists = db.prepare("SELECT id FROM agents WHERE id = 'buddy'").get();
 if (!buddyExists) {
   db.prepare(`INSERT INTO agents (id, name, model, system_prompt) VALUES ('buddy', 'Buddy', ?, ?)`).run(defaultModel, BUDDY_PERSONALITY);
-  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy' AND enabled_tools IS NULL").run(JSON.stringify(["search-youtube", "remember-fact"]));
+  db.prepare("UPDATE agents SET enabled_tools = ? WHERE id = 'buddy' AND enabled_tools IS NULL").run(JSON.stringify(["search-youtube"]));
   const dir = ensureAgentDir("buddy");
   if (!existsSync(join(dir, "identity.md"))) writeFileSync(join(dir, "identity.md"), BUDDY_PERSONALITY, "utf-8");
   if (!existsSync(join(dir, "user.md"))) writeFileSync(join(dir, "user.md"), "", "utf-8");
@@ -97,12 +97,16 @@ if (!buddyExists) {
 // ─── Migration: rename old tool names to skill folder names ──────────────────
 
 const TOOL_RENAMES = { search_youtube: "search-youtube", remember_fact: "remember-fact" };
+const DEPRECATED_SKILLS = ["remember-fact"];
 const PLATFORM_TOOLS = [
   "shell_exec", "read_file", "write_file", "list_directory",
   "process_start", "process_stop", "process_status", "process_logs",
   "spawn_agent", "create_agent_template",
   "create_schedule", "list_schedules", "delete_schedule",
   "workspace_list", "workspace_read", "workspace_write", "workspace_delete", "workspace_publish",
+  "memory_save", "memory_search", "memory_list", "memory_delete",
+  "browser_open", "browser_snapshot", "browser_screenshot", "browser_click",
+  "browser_type", "browser_navigate", "browser_close",
 ];
 
 for (const agent of db.prepare("SELECT id, enabled_tools FROM agents").all()) {
@@ -119,8 +123,9 @@ for (const agent of db.prepare("SELECT id, enabled_tools FROM agents").all()) {
     return name;
   });
   // Remove platform tool names — they're always on and redundant in enabled_tools
+  // Also remove deprecated skills replaced by native platform tools
   const before = tools.length;
-  tools = tools.filter((name) => !PLATFORM_TOOLS.includes(name));
+  tools = tools.filter((name) => !PLATFORM_TOOLS.includes(name) && !DEPRECATED_SKILLS.includes(name));
   if (tools.length !== before) changed = true;
 
   if (changed) {
@@ -317,7 +322,7 @@ export function getUserInfo(agentId) {
 
 export function getMemories(agentId) {
   return db.prepare(
-    "SELECT key, value FROM agent_memory WHERE agent_id = ?"
+    "SELECT key, value FROM agent_memory WHERE agent_id = ? ORDER BY updated_at DESC"
   ).all(agentId);
 }
 

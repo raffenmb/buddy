@@ -609,6 +609,70 @@ const tools = [
     },
   },
   {
+    name: "memory_save",
+    description:
+      "Save a fact or piece of information to your long-term memory. Use a short, descriptive key (e.g. 'favorite-color', 'birthday', 'work-schedule') and a concise value. If the key already exists, the value is updated.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Short, descriptive key for this memory (e.g. 'favorite-color', 'pet-name').",
+        },
+        value: {
+          type: "string",
+          description: "The information to remember.",
+        },
+      },
+      required: ["key", "value"],
+    },
+  },
+  {
+    name: "memory_search",
+    description:
+      "Search your long-term memory for facts matching a query. Searches across both keys and values. Use when you need to recall something specific that may not be in your recent memory context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search term to match against memory keys and values.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "memory_list",
+    description:
+      "List all memory keys stored for this agent. Returns the key names so you can see what you've remembered. Use memory_search or the key name to recall specific values.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "integer",
+          description: "Maximum number of keys to return. Omit for all keys.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "memory_delete",
+    description:
+      "Delete a specific memory by key. Use when information is no longer relevant or the user asks you to forget something.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key of the memory to delete.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
     name: "shell_exec",
     description:
       "Execute a shell command on the host machine. Has access to all installed utilities (git, node, python3, curl, ffmpeg, etc.). Destructive commands (rm, mv, chmod, etc.) require user confirmation before executing. Use for running scripts, data processing, installing packages, system tasks, and any command-line operation.",
@@ -888,9 +952,122 @@ const tools = [
       required: ["schedule_id"],
     },
   },
+
+
+  {
+    name: "browser_open",
+    description:
+      "Open a URL in a headless browser. Launches the browser if not already running. Returns the page title and an accessibility tree snapshot describing the page structure and content. Use the accessibility tree to understand what's on the page and decide what to interact with.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The URL to navigate to.",
+        },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "Get an accessibility tree snapshot of the current page. Returns a text representation of all interactive elements, headings, links, and content. Use this to re-read the page after interactions or to check what's on screen.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "browser_screenshot",
+    description:
+      "Take a PNG screenshot of the current browser page and save it to a file. Defaults to ~/.buddy/shared/ so it can be served to the user. Returns the file path.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Custom file path for the screenshot. Defaults to ~/.buddy/shared/screenshot-<timestamp>.png.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "browser_click",
+    description:
+      "Click an element on the current page. You can target by CSS selector or by visible text content. Returns an updated accessibility tree snapshot after the click.",
+    input_schema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector of the element to click (e.g. 'button.submit', '#login', 'a[href=\"/about\"]').",
+        },
+        text: {
+          type: "string",
+          description: "Visible text content to find and click. Use this when you don't know the exact selector but can see the text in the accessibility tree.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "browser_type",
+    description:
+      "Type text into the current page. Optionally target a specific input field by CSS selector. Can press Enter after typing to submit forms or trigger search.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "The text to type.",
+        },
+        selector: {
+          type: "string",
+          description: "CSS selector of the input field to type into. If omitted, types into the currently focused element.",
+        },
+        press_enter: {
+          type: "boolean",
+          description: "Press Enter after typing (useful for search boxes, form submission).",
+        },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "browser_navigate",
+    description:
+      "Navigate to a different URL on the existing browser page. Use this instead of browser_open when the browser is already running and you just need to go to a new page.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The URL to navigate to.",
+        },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "browser_close",
+    description:
+      "Close the browser and free resources. The browser also auto-closes after 5 minutes of inactivity.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 export const PLATFORM_TOOL_NAMES = [
+  "memory_save",
+  "memory_search",
+  "memory_list",
+  "memory_delete",
   "shell_exec",
   "read_file",
   "write_file",
@@ -909,6 +1086,13 @@ export const PLATFORM_TOOL_NAMES = [
   "workspace_write",
   "workspace_delete",
   "workspace_publish",
+  "browser_open",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_type",
+  "browser_navigate",
+  "browser_close",
 ];
 
 export default tools;
