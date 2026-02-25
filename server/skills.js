@@ -5,13 +5,23 @@
 
 import { mkdirSync, cpSync, existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync } from "fs";
 import { fileURLToPath } from "url";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { DIRS } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SKILLS_DIR = join(__dirname, "default-skills");
 
 const SKILLS_DIR = DIRS.skills;
+
+// ─── Path traversal protection ──────────────────────────────────────────────
+
+function safePath(base, ...segments) {
+  const resolved = resolve(base, ...segments);
+  if (!resolved.startsWith(resolve(base))) {
+    throw new Error("Invalid path: traversal outside allowed directory");
+  }
+  return resolved;
+}
 
 // Ensure skills directory exists on startup
 if (!existsSync(SKILLS_DIR)) {
@@ -119,7 +129,7 @@ export function listSkills() {
  * @returns {string|null} The raw file content, or null if not found.
  */
 export function getSkillContent(folderName) {
-  const skillMdPath = join(SKILLS_DIR, folderName, "SKILL.md");
+  const skillMdPath = join(safePath(SKILLS_DIR, folderName), "SKILL.md");
   if (!existsSync(skillMdPath)) return null;
   return readFileSync(skillMdPath, "utf-8");
 }
@@ -130,7 +140,7 @@ export function getSkillContent(folderName) {
  * @returns {string|null} The markdown prompt content, or null if not found.
  */
 export function getSkillPrompt(folderName) {
-  const skillMdPath = join(SKILLS_DIR, folderName, "SKILL.md");
+  const skillMdPath = join(safePath(SKILLS_DIR, folderName), "SKILL.md");
   if (!existsSync(skillMdPath)) return null;
 
   const content = readFileSync(skillMdPath, "utf-8");
@@ -146,7 +156,7 @@ export function getSkillPrompt(folderName) {
  */
 export function validateAndAddSkill(folderName, skillMdContent) {
   // Check duplicate folder name
-  const skillDir = join(SKILLS_DIR, folderName);
+  const skillDir = safePath(SKILLS_DIR, folderName);
   if (existsSync(skillDir)) {
     return {
       success: false,
@@ -195,7 +205,7 @@ export function validateAndAddSkill(folderName, skillMdContent) {
  * @returns {{ success: boolean, error?: string }}
  */
 export function updateSkill(folderName, skillMdContent) {
-  const skillDir = join(SKILLS_DIR, folderName);
+  const skillDir = safePath(SKILLS_DIR, folderName);
   if (!existsSync(skillDir)) {
     return { success: false, error: `Skill '${folderName}' not found.` };
   }
@@ -235,7 +245,7 @@ export function updateSkill(folderName, skillMdContent) {
  * @returns {{ success: boolean, error?: string }}
  */
 export function deleteSkill(folderName) {
-  const skillDir = join(SKILLS_DIR, folderName);
+  const skillDir = safePath(SKILLS_DIR, folderName);
   if (!existsSync(skillDir)) {
     return { success: false, error: `Skill '${folderName}' not found.` };
   }

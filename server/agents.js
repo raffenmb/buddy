@@ -6,13 +6,23 @@
  */
 
 import db from "./db.js";
-import { join } from "path";
+import { join, resolve } from "path";
 import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync, rmSync, unlinkSync, statSync } from "fs";
 import { DIRS } from "./config.js";
 
 const AGENTS_DIR = DIRS.agents;
 
 const CORE_FILES = ["identity.md", "user.md"];
+
+// ─── Path traversal protection ──────────────────────────────────────────────
+
+function safePath(base, ...segments) {
+  const resolved = resolve(base, ...segments);
+  if (!resolved.startsWith(resolve(base))) {
+    throw new Error("Invalid path: traversal outside allowed directory");
+  }
+  return resolved;
+}
 
 // ─── Default personality (written to identity.md for buddy) ──────────────────
 
@@ -274,7 +284,7 @@ export function attachUserToSharedAgents(userId) {
 // ─── Agent Files ─────────────────────────────────────────────────────────────
 
 export function getAgentFiles(agentId) {
-  const dir = join(AGENTS_DIR, agentId);
+  const dir = safePath(AGENTS_DIR, agentId);
   if (!existsSync(dir)) return [];
 
   return readdirSync(dir)
@@ -289,14 +299,14 @@ export function getAgentFiles(agentId) {
 }
 
 export function readAgentFile(agentId, filename) {
-  const fp = join(AGENTS_DIR, agentId, filename);
+  const fp = safePath(AGENTS_DIR, agentId, filename);
   if (!existsSync(fp)) return null;
   return readFileSync(fp, "utf-8");
 }
 
 export function writeAgentFile(agentId, filename, content) {
   ensureAgentDir(agentId);
-  const fp = join(AGENTS_DIR, agentId, filename);
+  const fp = safePath(AGENTS_DIR, agentId, filename);
   writeFileSync(fp, content, "utf-8");
 }
 
@@ -304,7 +314,7 @@ export function deleteAgentFile(agentId, filename) {
   if (CORE_FILES.includes(filename)) {
     throw new Error(`Cannot delete core file: ${filename}`);
   }
-  const fp = join(AGENTS_DIR, agentId, filename);
+  const fp = safePath(AGENTS_DIR, agentId, filename);
   if (existsSync(fp)) {
     unlinkSync(fp);
   }
