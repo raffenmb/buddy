@@ -4,6 +4,19 @@
  * authentication, and WebSocket for real-time canvas/subtitle broadcasts.
  */
 
+// ─── Root check ─────────────────────────────────────────────────────────────
+// Refuse to run as root on Linux. The setup script creates a dedicated
+// 'buddy' user — running as root defeats the privilege isolation.
+if (process.platform === "linux" && process.getuid && process.getuid() === 0) {
+  console.error(
+    "ERROR: Buddy should not run as root.\n" +
+    "The setup script creates a 'buddy' user for this purpose.\n" +
+    "Start with: sudo -u buddy node index.js\n" +
+    "Or use the systemd service: systemctl start buddy"
+  );
+  process.exit(1);
+}
+
 import "dotenv/config";
 import express from "express";
 import cors from "cors";

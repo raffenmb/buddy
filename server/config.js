@@ -55,6 +55,11 @@ const DEFAULT_GUARDS = {
     "halt",
     "iptables",
     "ip6tables",
+    "sudo",
+    "su",
+    "pkexec",
+    "doas",
+    "runuser",
   ],
 };
 

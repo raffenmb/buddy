@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 CURRENT_STEP=0
 LOG_FILE="$HOME/buddy-setup.log"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,6 +133,12 @@ echo "  Log file: $LOG_FILE"
     echo ""
 } > "$LOG_FILE"
 
+# ─── Root check ──────────────────────────────────────────────
+if [ "$(id -u)" -ne 0 ]; then
+    die "This script must be run as root." \
+        "Try: sudo bash setup.sh"
+fi
+
 # ─── Pre-flight checks ──────────────────────────────────────
 
 if [ ! -f "$SCRIPT_DIR/package.json" ] || [ ! -d "$SCRIPT_DIR/server" ] || [ ! -d "$SCRIPT_DIR/client" ]; then
@@ -183,7 +189,23 @@ fi
     echo "DISTRO=$DISTRO"
 } >> "$LOG_FILE"
 
-# ─── Step 2: Check/install build tools ──────────────────────
+# ─── Step 2: Create buddy user ──────────────────────────────
+
+step "Creating buddy system user..."
+
+if id buddy &>/dev/null; then
+    ok "User 'buddy' already exists"
+else
+    useradd --system --create-home --shell /bin/bash buddy
+    ok "Created user 'buddy' with home at /home/buddy"
+fi
+
+BUDDY_HOME="/home/buddy/.buddy"
+mkdir -p "$BUDDY_HOME"
+chown buddy:buddy "$BUDDY_HOME"
+ok "Data directory ready: $BUDDY_HOME"
+
+# ─── Step 3: Check/install build tools ──────────────────────
 
 step "Checking build tools (needed for native modules)..."
 
@@ -203,10 +225,10 @@ if [ "$NEED_BUILD_TOOLS" = true ]; then
     warn "Build tools are needed to compile native modules (better-sqlite3)."
     if ask_yn "Install build tools now?"; then
         if [ "$OS" = "linux" ]; then
-            run_logged "Updating package lists" sudo apt-get update -y || \
+            run_logged "Updating package lists" apt-get update -y || \
                 die "Failed to update package lists." "Check your internet connection and try again."
-            run_logged "Installing build-essential and python3" sudo apt-get install -y build-essential python3 || \
-                die "Failed to install build tools." "Try running: sudo apt-get install -y build-essential python3"
+            run_logged "Installing build-essential and python3" apt-get install -y build-essential python3 || \
+                die "Failed to install build tools." "Try running: apt-get install -y build-essential python3"
         elif [ "$OS" = "mac" ]; then
             info "This will open an Xcode Command Line Tools installer dialog."
             info "Click 'Install' in the dialog, then wait for it to finish."
@@ -224,15 +246,15 @@ else
     ok "Build tools already installed"
 fi
 
-# ─── Step 3: Check/install Node.js 18+ ──────────────────────
+# ─── Step 4: Check/install Node.js 18+ ──────────────────────
 
 step "Checking Node.js..."
 
 install_node() {
     if [ "$OS" = "linux" ]; then
-        run_logged "Adding NodeSource repository" bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -" || \
+        run_logged "Adding NodeSource repository" bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -" || \
             die "Failed to add NodeSource repository." "Check your internet connection."
-        run_logged "Installing Node.js 20" sudo apt-get install -y nodejs || \
+        run_logged "Installing Node.js 20" apt-get install -y nodejs || \
             die "Failed to install Node.js."
     elif [ "$OS" = "mac" ]; then
         if command -v brew &>/dev/null; then
@@ -274,22 +296,30 @@ if ! command -v npm &>/dev/null; then
         "Try reinstalling Node.js."
 fi
 
-# ─── Step 4: Configure .env ─────────────────────────────────
+# ─── Step 5: Configure environment ───────────────────────────
 
 step "Configuring environment..."
 
 SKIP_ENV=false
 
-if [ -f "$SCRIPT_DIR/server/.env" ]; then
-    EXISTING_KEY=$(grep -o 'ANTHROPIC_API_KEY=.*' "$SCRIPT_DIR/server/.env" 2>/dev/null | cut -d= -f2 || true)
+# Check for existing .env in current install or source directory
+ENV_CHECK_PATH=""
+if [ -f "/opt/buddy/server/.env" ]; then
+    ENV_CHECK_PATH="/opt/buddy/server/.env"
+elif [ -f "$SCRIPT_DIR/server/.env" ]; then
+    ENV_CHECK_PATH="$SCRIPT_DIR/server/.env"
+fi
+
+if [ -n "$ENV_CHECK_PATH" ]; then
+    EXISTING_KEY=$(grep -o 'ANTHROPIC_API_KEY=.*' "$ENV_CHECK_PATH" 2>/dev/null | cut -d= -f2 || true)
     if [ -n "$EXISTING_KEY" ] && [ "$EXISTING_KEY" != "sk-ant-..." ]; then
-        ok "API key already configured in server/.env"
+        ok "API key already configured in ${ENV_CHECK_PATH}"
         if ask_yn "Keep the existing configuration?"; then
             info "Keeping existing configuration."
             SKIP_ENV=true
         fi
     else
-        info "server/.env exists but API key is not set."
+        info "${ENV_CHECK_PATH} exists but API key is not set."
     fi
 fi
 
@@ -337,43 +367,72 @@ if [ "$SKIP_ENV" = false ]; then
         *) CLAUDE_MODEL="claude-sonnet-4-5-20250929" ;;
     esac
 
+    # Values will be written to /opt/buddy/server/.env during the install step
+    ok "Environment configured (model: ${CLAUDE_MODEL})"
+fi
+
+# ─── Step 6: Install application to /opt/buddy/ ─────────────
+
+step "Installing application to /opt/buddy/..."
+
+if [ -d "/opt/buddy" ]; then
+    info "Updating existing installation..."
+    # Preserve .env if it exists
+    if [ -f "/opt/buddy/server/.env" ]; then
+        cp /opt/buddy/server/.env /tmp/buddy-env-backup
+    fi
+    rm -rf /opt/buddy
+fi
+
+cp -r "$SCRIPT_DIR" /opt/buddy
+# Remove setup artifacts that don't belong in the install
+rm -f /opt/buddy/setup.sh
+chown -R root:root /opt/buddy
+chmod -R 755 /opt/buddy
+
+# Restore or write .env
+if [ -f /tmp/buddy-env-backup ] && [ "$SKIP_ENV" = true ]; then
+    mv /tmp/buddy-env-backup /opt/buddy/server/.env
+    ok "Restored existing .env"
+elif [ "$SKIP_ENV" = false ]; then
     {
         printf 'ANTHROPIC_API_KEY=%s\n' "$API_KEY"
         printf 'ELEVENLABS_API_KEY=%s\n' "${ELEVENLABS_KEY:-}"
         printf 'PORT=3001\n'
         printf 'CLAUDE_MODEL=%s\n' "$CLAUDE_MODEL"
         printf 'BUDDY_ENV=production\n'
-    } > "$SCRIPT_DIR/server/.env"
-
-    ok "Configuration saved to server/.env (model: ${CLAUDE_MODEL})"
+    } > /opt/buddy/server/.env
 fi
 
-# ─── Step 5: Install npm dependencies ───────────────────────
+# .env must be readable by buddy user
+chmod 640 /opt/buddy/server/.env
+chown root:buddy /opt/buddy/server/.env
+
+ok "Application installed to /opt/buddy/"
+
+# ─── Step 7: Install npm dependencies ───────────────────────
 
 step "Installing npm dependencies..."
 
-# Uses --install-strategy=nested to work around npm workspace bug where
-# platform-specific optional dependencies (Rollup, Tailwind oxide) are not
-# installed correctly during hoisting. See: https://github.com/npm/cli/issues/4828
-run_logged "Installing server and client dependencies" npm --prefix "$SCRIPT_DIR" run install:all || \
+run_logged "Installing server and client dependencies" npm --prefix /opt/buddy run install:all || \
     die "Failed to install dependencies." \
         "Check the log file and make sure you have internet access."
 
-# ─── Step 6: Build frontend ─────────────────────────────────
+# ─── Step 8: Build frontend ─────────────────────────────────
 
 step "Building the frontend..."
 
-run_logged "Building client" npm --prefix "$SCRIPT_DIR" run build || \
+run_logged "Building client" npm --prefix /opt/buddy run build || \
     die "Failed to build the frontend." \
         "Check the log file for errors."
 
-# ─── Step 7: Create admin account ────────────────────────────
+# ─── Step 9: Create admin account ────────────────────────────
 
 step "Creating admin account..."
 
-# Start server in background (BUDDY_SKIP_SETUP=1 skips interactive CLI prompts,
+# Start server in background as buddy user (BUDDY_SKIP_SETUP=1 skips interactive CLI prompts,
 # exec replaces subshell so SERVER_PID = node PID)
-(cd "$SCRIPT_DIR/server" && exec env NODE_ENV=production BUDDY_SKIP_SETUP=1 node index.js) >> "$LOG_FILE" 2>&1 &
+(cd /opt/buddy/server && exec sudo -u buddy env NODE_ENV=production BUDDY_SKIP_SETUP=1 node index.js) >> "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait up to 30 seconds for server to be ready
@@ -493,10 +552,10 @@ unset ADMIN_PASS ADMIN_PASS_CONFIRM JSON_PASS ESCAPED_PASS JSON_BODY password_in
 
 info "Temporary server stopped."
 
-# ─── Step 8: Tailscale setup (optional) ──────────────────────
+# ─── Tailscale setup (optional, part of Step 9) ──────────────
 
-step "Remote access via Tailscale..."
-
+echo ""
+echo "${BOLD}Remote access via Tailscale...${RESET}"
 echo ""
 echo "  Tailscale lets you securely access Buddy from your phone, laptop,"
 echo "  or any device — anywhere in the world — without opening ports or"
@@ -530,16 +589,16 @@ if ask_yn "Set up Tailscale for remote access?"; then
     if command -v tailscale &>/dev/null; then
         # On Linux, ensure tailscaled service is running after fresh install
         if [ "$OS" = "linux" ] && command -v systemctl &>/dev/null; then
-            sudo systemctl enable --now tailscaled >> "$LOG_FILE" 2>&1 || true
+            systemctl enable --now tailscaled >> "$LOG_FILE" 2>&1 || true
         fi
 
         # Check if already connected by trying to get an IP
         TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
         if [ -z "$TAILSCALE_IP" ]; then
-            info "Tailscale is not connected. Running 'sudo tailscale up'..."
+            info "Tailscale is not connected. Running 'tailscale up'..."
             info "A URL will appear below — open it in your browser to log in."
             echo ""
-            sudo tailscale up
+            tailscale up
             echo ""
 
             # Check again after auth
@@ -556,42 +615,46 @@ else
     info "Skipping Tailscale. You can set it up later: https://tailscale.com/download"
 fi
 
-# ─── Step 9: pm2 + start ────────────────────────────────────
+# ─── Step 10: Install systemd service ────────────────────────
 
-step "Starting Buddy with pm2..."
+step "Installing systemd service..."
 
-if ! command -v pm2 &>/dev/null; then
-    info "Installing pm2 (process manager)..."
-    run_logged "Installing pm2 globally" sudo npm install -g pm2 || \
-        die "Failed to install pm2." \
-            "Try running: sudo npm install -g pm2"
-fi
+cat > /etc/systemd/system/buddy.service << 'UNIT'
+[Unit]
+Description=Buddy AI Agent
+After=network.target
 
-# Stop existing instance if running
-pm2 delete buddy-server >> "$LOG_FILE" 2>&1 || true
+[Service]
+Type=simple
+User=buddy
+Group=buddy
+WorkingDirectory=/opt/buddy/server
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
 
-run_logged "Starting Buddy server" pm2 start "$SCRIPT_DIR/ecosystem.config.cjs" || \
-    die "Failed to start the server." \
-        "Try running manually: cd server && node index.js"
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/buddy/.buddy
+ProtectHome=tmpfs
 
-pm2 save >> "$LOG_FILE" 2>&1 || true
+[Install]
+WantedBy=multi-user.target
+UNIT
 
-ok "Buddy is running!"
+systemctl daemon-reload
+systemctl enable buddy
+systemctl start buddy
 
-# Offer auto-start on boot
-echo ""
-if ask_yn "Start Buddy automatically on system boot?"; then
-    info "Setting up pm2 startup..."
-    STARTUP_CMD=$(pm2 startup 2>&1 | grep -E "^\s*sudo " || true)
-    if [ -n "$STARTUP_CMD" ]; then
-        info "Running: ${STARTUP_CMD}"
-        eval "$STARTUP_CMD" >> "$LOG_FILE" 2>&1 || warn "Auto-start setup failed. Run 'pm2 startup' manually."
-        ok "Auto-start configured!"
-    else
-        # pm2 startup might not need sudo (already root, or already configured)
-        pm2 startup >> "$LOG_FILE" 2>&1 || true
-        ok "Auto-start configured!"
-    fi
+# Verify it started
+sleep 2
+if systemctl is-active --quiet buddy; then
+    ok "Buddy service is running"
+else
+    fail "Service failed to start"
+    info "Check logs: journalctl -u buddy -n 50"
 fi
 
 # ─── Done ────────────────────────────────────────────────────
@@ -628,8 +691,8 @@ if [ -n "$TAILSCALE_IP" ]; then
 fi
 
 echo "  ${BOLD}Useful commands:${RESET}"
-echo "    pm2 status          — check if Buddy is running"
-echo "    pm2 logs            — see server logs"
-echo "    pm2 restart all     — restart the server"
-echo "    pm2 stop all        — stop the server"
+echo "    systemctl status buddy   — check if Buddy is running"
+echo "    journalctl -u buddy -f   — follow server logs"
+echo "    systemctl restart buddy  — restart the server"
+echo "    systemctl stop buddy     — stop the server"
 echo ""

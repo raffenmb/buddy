@@ -31,11 +31,12 @@ Buddy is a **trusted personal AI agent** that runs 24/7 on a dedicated always-on
 # Install dependencies
 npm run install:all
 
-# Start backend (port 3001)
-cd server && node index.js
+# Development (local machine)
+cd server && node index.js        # Backend (port 3001)
+cd client && npm run dev           # Frontend dev server (port 5173)
 
-# Start frontend dev server (port 5173, separate terminal)
-cd client && npm run dev
+# Production deployment (VPS)
+sudo bash setup.sh                 # One-command install as non-root buddy user
 ```
 
 No automated test framework is configured. Testing is manual.
@@ -163,16 +164,17 @@ check-weather/
 
 ```
 BUDDY_ENV=development   # Laptop — writes restricted to ~/.buddy/ and /tmp/
-BUDDY_ENV=production    # Always-on PC — full host access
+BUDDY_ENV=production    # VPS/home PC — scoped to buddy user's permissions
 ```
 
 | Behavior | development | production |
 |----------|-------------|------------|
-| Shell commands | Scoped to `~/.buddy/` and `/tmp/` | Full host access |
-| Filesystem writes | Only `~/.buddy/` and `/tmp/` | Full access |
-| Filesystem reads | Anywhere | Anywhere |
+| Shell commands | Scoped to `~/.buddy/` and `/tmp/` | Full access within buddy user's permissions |
+| Filesystem writes | Only `~/.buddy/` and `/tmp/` | Anywhere buddy user can write |
+| Filesystem reads | Anywhere user can read | Anywhere buddy user can read |
 | Destructive gate | All commands require confirmation | Only pattern-matched |
-| Process management | Only agent-started processes | Full access |
+| Process management | Only agent-started processes | Full access (buddy user's processes) |
+| Privilege escalation | Blocked (sudo, su, etc.) | Blocked (buddy user has no sudo) |
 
 ## Data Layout
 
